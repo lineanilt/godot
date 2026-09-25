@@ -27,7 +27,7 @@ It seems quite stable and Mono works.
 
 #### License
 MPL2.0. Godot and its PRs were MIT.
-Games you export with Godot is not automatically MPL or MIT.
+Games you export with Godot are not automatically MPL or MIT.
 
 ### Building
 You can just build this like you would a vanilla Godot 3.x version.
