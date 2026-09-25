@@ -53,7 +53,7 @@ You don't _need_ to contribute, but it would be appreciated if you did.
 This fork is mostly just for stylised games.
 If your PR looks sick and works well, I might merge it.
 
-###### *Side note, don't bother creating a PR for the official repo's 3.x branch. It is effectively dead and the only commits you'll see there are from lawnjelly (<3) doing minor bugfixes. Your PRs won't get noticed and they literally close ones that \*they\* ignored because the OP was 'inactive'. Literally just explore the 3.x milestone's PR list and you'll see.*
+###### *Side note, don't bother creating a PR for the official repo's 3.x branch. It is effectively dead and the only commits you'll see there are from @lawnjelly (<3) doing minor bugfixes. Your PRs won't get noticed and they literally close ones that \*they\* ignored because the OP was 'inactive'. Literally just explore the 3.x milestone's PR list and you'll see.*
 
 ### Usage
 Only the Linux editor build is up for now.
