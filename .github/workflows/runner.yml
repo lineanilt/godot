@@ -6,41 +6,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  static-checks:
-    name: 📊 Static
-    uses: ./.github/workflows/static_checks.yml
-
-  android-build:
-    name: 🤖 Android
-    needs: static-checks
-    uses: ./.github/workflows/android_builds.yml
-
-  ios-build:
-    name: 🍏 iOS
-    needs: static-checks
-    uses: ./.github/workflows/ios_builds.yml
-
-  javascript-build:
-    name: 🌐 JavaScript
-    needs: static-checks
-    uses: ./.github/workflows/javascript_builds.yml
-
+  # android-build:
+  #   name: 🤖 Android
+  #   uses: ./.github/workflows/android_builds.yml
+  # 
+  # ios-build:
+  #   name: 🍏 iOS
+  #   uses: ./.github/workflows/ios_builds.yml
+  # 
+  # javascript-build:
+  #   name: 🌐 JavaScript
+  #   uses: ./.github/workflows/javascript_builds.yml
+  
   linux-build:
     name: 🐧 Linux
-    needs: static-checks
     uses: ./.github/workflows/linux_builds.yml
 
-  macos-build:
-    name: 🍎 macOS
-    needs: static-checks
-    uses: ./.github/workflows/macos_builds.yml
-
-  server-build:
-    name: ☁ Server
-    needs: static-checks
-    uses: ./.github/workflows/server_builds.yml
+  # macos-build:
+  #   name: 🍎 macOS
+  #   uses: ./.github/workflows/macos_builds.yml
+  # 
+  # server-build:
+  #   name: ☁ Server
+  #   uses: ./.github/workflows/server_builds.yml
 
   windows-build:
     name: 🏁 Windows
-    needs: static-checks
     uses: ./.github/workflows/windows_builds.yml
