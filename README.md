@@ -1,4 +1,10 @@
-This is a fork of Godot 3.7dev1 that adds a bunch of new features and merges some PRs.
+<p align="center">
+  <a href="https://godotengine.org">
+    <img src="fork_icon.svg" width="256" alt="Godot Engine logo">
+  </a>
+</p>
+
+This is a **fork of Godot 3.x** that adds a bunch of new features and merges some PRs.
 - Export tooltips. `## Like this.` (35716)
 - NodePath export hints. (39155 - the bastards closed the PR.)
 - Shadow dither. (53967 - I added onto this with some other stuff.)
@@ -70,12 +76,6 @@ Hopefully I can setup like a GitHub Actions page thing in a month or so.
 ## Original README
 ---
 # Godot Engine
-
-<p align="center">
-  <a href="https://godotengine.org">
-    <img src="logo_outlined.svg" width="400" alt="Godot Engine logo">
-  </a>
-</p>
 
 ## 2D and 3D cross-platform game engine
 
