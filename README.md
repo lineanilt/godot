@@ -1,3 +1,65 @@
+This is a fork of Godot 3.7dev1 that adds a bunch of new features and merges some PRs.
+- Export tooltips. `## Like this.` (35716)
+- NodePath export hints. (39155 - the bastards closed the PR.)
+- Shadow dither. (53967 - I added onto this with some other stuff.)
+- GTAO. (53886 - This has some haloing.)
+- 16-bit shadowmaps. (57430)
+- ViewportTexture G-Buffer access. (38926 - Slightly buggy. I'd suggest disabling and reenabling the G-Buffer at scene launch.)
+	- The Normal texture's alpha has the roughness of materials.
+	- If you're not using it, you can strip the Subsurface Scattering shader of its functions so its G-Buffer texture can be, say, a custom float pass.
+- PCF25. (54355)
+- NPOT shadowmaps (54042 - This doesn't work on shadow atlases.)
+- Non-uniform light scaling. (self - shadows break when this is enabled though. I think it's the UVs, but I might be wrong.)
+- Hard shadows are actually hard. (self)
+- Square light mode. OmniLight shadows still render in a sphere for some reason. (self)
+- Per-light shadow blur. This goes well with shader dither. (self)
+- (self) Some new shader built-ins. Namely:
+	- `CUSTOM_PASS_DATA` (vec4).
+	- `CUSTOM_TEXTURE` to view `CUSTOM_PASS_DATA` (sampler2D). 16-bit.
+		- For some reason, you need to apply an ALPHA to your shader to view it. Not sure why.
+	- `textureGather`. I forgot what OpenGL version this requires.
+- Some contact shadow improvements. (self)
+- Depth texture can be accessed in CanvasItems. Make sure you have a proper 3D viewport, though. (self)
+
+I probably missed some but still.
+
+It seems quite stable and Mono works.
+
+#### License
+MPL2.0. Godot and its PRs were MIT.
+
+### Building
+You can just build this like you would a vanilla Godot 3.x version.
+Though I just use this:
+```bash
+# Editor
+scons -j4 platform=x11 target=release_debug use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes mono_glue=yes mono_static=yes copy_mono_root=yes
+# Exports
+scons -j4 platform=x11 tools=no target=release_debug use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes mono_static=yes copy_mono_root=yes
+scons -j4 platform=x11 tools=no target=release use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes mono_static=yes copy_mono_root=yes
+# Windows
+scons platform=windows tools=no target=release -j4 use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes bits=64 mono_prefix="/path/to/windows_mono" mono_static=yes copy_mono_root=yes
+
+# Stripping
+strip bin/godot.x11.opt.64.llvm.mono bin/godot.x11.opt.debug.64.llvm.mono bin/godot.x11.opt.tools.64.llvm.mono bin/godot.windows.opt.64.mono.exe
+
+# copying Export Templates
+cp bin/godot.x11.opt.64.llvm.mono ~/.local/share/godot/templates/3.7.dev/linux_x11_64_release
+cp bin/godot.x11.opt.debug.64.llvm.mono ~/.local/share/godot/templates/3.7.dev/linux_x11_64_debug
+cp bin/godot.windows.opt.64.mono.exe ~/.local/share/godot/templates/3.7.dev/windows_64_release.exe
+```
+(Linux)
+
+### Flaws
+- GLES2 doesn't have the new features. Well, most of them.
+- This would not work on most mobile drivers.
+- On 16-texunit GPUs, you only have 3 samplers available for `spatial` shaders. I'd recommend texture packing or `sampler2DArray`s.
+- Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
+- It's a bit janky since it's mostly just meant for _my_ (future) games.
+- Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
+
+## Original README
+---
 # Godot Engine
 
 <p align="center">
