@@ -48,13 +48,21 @@ strip bin/godot.x11.opt.64.llvm.mono bin/godot.x11.opt.debug.64.llvm.mono bin/go
 You'll have to download BCLs though.
 You can get it here: `https://github.com/godotengine/godot-mono-builds/releases`
 
+### Contributing
+You don't _need_ to contribute, but it would be appreciated if you did.
+This fork is mostly just for stylised games.
+If your PR looks sick and works well, I might merge it.
+
+### Usage
+Only the Linux editor build is up for now.
+Hopefully I can setup like a GitHub Actions page thing in a month or so.
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
 - This would not work on most mobile drivers.
 - On 16-texunit GPUs, you only have 3 samplers available for `spatial` shaders. I'd recommend texture packing or `sampler2DArray`s.
 - Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
-- It's a bit janky since it's mostly just meant for _my_ (future) games.
+- It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
 - Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
 
 ## Original README
