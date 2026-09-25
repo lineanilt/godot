@@ -2806,6 +2806,7 @@ FRAGMENT_SHADER_CODE
         // Since diffuse is already near 0 here, it hides the faceted teeth with 0 light leaking.
         float NdotL_term = clamp(dot(normal, -light_direction_attenuation.xyz), 0.0, 1.0);
         shadow = mix(1.0, shadow, smoothstep(0.0, 0.08, NdotL_term));
+        // -----------------------------
 
 #ifdef LIGHT_USE_PSSM_BLEND //ubershader-runtime
 

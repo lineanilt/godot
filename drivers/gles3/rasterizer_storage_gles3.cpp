@@ -2253,6 +2253,8 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 			p_shader->spatial.no_blob_shadows = false;
 			p_shader->spatial.uses_sss = false;
 			p_shader->spatial.uses_time = false;
+			p_shader->spatial.uses_custom_pass = false;    // <--- ADD THIS
+			p_shader->spatial.uses_custom_texture = false; // <--- ADD THIS
 			p_shader->spatial.uses_vertex_lighting = false;
 			p_shader->spatial.uses_screen_texture = false;
 			p_shader->spatial.uses_depth_texture = false;
@@ -2293,6 +2295,8 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 			shaders.actions_scene.usage_flag_pointers["ALPHA_SCISSOR"] = &p_shader->spatial.uses_alpha_scissor;
 
 			shaders.actions_scene.usage_flag_pointers["SSS_STRENGTH"] = &p_shader->spatial.uses_sss;
+			shaders.actions_scene.usage_flag_pointers["CUSTOM_PASS_DATA"] = &p_shader->spatial.uses_custom_pass;       // <--- ADD THIS
+			shaders.actions_scene.usage_flag_pointers["CUSTOM_TEXTURE"] = &p_shader->spatial.uses_custom_texture; // <--- ADD THIS
 			shaders.actions_scene.usage_flag_pointers["DISCARD"] = &p_shader->spatial.uses_discard;
 			shaders.actions_scene.usage_flag_pointers["SCREEN_TEXTURE"] = &p_shader->spatial.uses_screen_texture;
 			shaders.actions_scene.usage_flag_pointers["DEPTH_TEXTURE"] = &p_shader->spatial.uses_depth_texture;
@@ -7381,6 +7385,7 @@ void RasterizerStorageGLES3::_render_target_allocate(RenderTarget *rt) {
 			custom_tex->active = true;
 
 			texture_set_flags(rt->buffers.custom_texture, custom_tex->flags);
+			// -------------------------------------
 
 			GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 			glBindFramebuffer(GL_FRAMEBUFFER, RasterizerStorageGLES3::system_fbo);

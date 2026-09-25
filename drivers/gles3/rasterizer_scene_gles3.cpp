@@ -2403,6 +2403,7 @@ void RasterizerSceneGLES3::_add_geometry_with_material(RasterizerStorageGLES3::G
 	}
 
 	if (p_material->shader->spatial.uses_custom_pass || p_material->shader->spatial.uses_custom_texture) {
+		state.used_custom_pass = true; // <--- ADD THIS
 	}
 
 	if (p_material->shader->spatial.uses_screen_texture) {
@@ -3243,6 +3244,7 @@ void RasterizerSceneGLES3::_fill_render_list(InstanceBase **p_cull_result, int p
 	state.used_sss = false;
 	state.used_screen_texture = false;
 	state.used_depth_texture = false;
+	state.used_custom_pass = false; // <--- ADD THIS
 	
 	//fill list
 
@@ -4423,6 +4425,7 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 			} else {
 				draw_buffers.push_back(GL_NONE); // Keeps array index synced
 			}
+			draw_buffers.push_back(GL_COLOR_ATTACHMENT4); // <--- WE ADDED THIS
 			glDrawBuffers(draw_buffers.size(), draw_buffers.ptr());
 
 			Color black(0, 0, 0, 0);
@@ -4431,6 +4434,7 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 			if (state.used_sss) {
 				glClearBufferfv(GL_COLOR, 3, black.components); // normal metal rough
 			}
+			glClearBufferfv(GL_COLOR, 4, black.components); // <--- WE ADDED THIS
 
 		} else {
 			if (storage->frame.current_rt->buffers.active) {

@@ -521,6 +521,8 @@ public:
 			bool uses_sss;
 			bool uses_screen_texture;
 			bool uses_depth_texture;
+			bool uses_custom_pass;    // <--- ADD THIS
+			bool uses_custom_texture; // <--- ADD THIS
 			bool uses_time;
 			bool uses_tangent;
 			bool uses_ensure_correct_normals;

@@ -209,6 +209,7 @@ public:
 		bool cull_disabled;
 		bool used_sss;
 		bool used_screen_texture;
+		bool used_custom_pass; // <--- ADD THIS
 		bool used_depth_prepass;
 
 		bool used_depth_texture;
@@ -607,6 +608,7 @@ public:
 			struct {
 				float _pad_matrix1[16];
 				float shadow_extra_params[4];
+				float light_inverse_matrix[16]; // <--- MOVED HERE!
 			};
 			float matrix[4 * 16];
 		} shadow;
