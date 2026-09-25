@@ -1,3 +1,5 @@
+#### (this is from Godot's original CONTRIBUTING file)
+
 # How to contribute efficiently
 
 ## Table of contents
