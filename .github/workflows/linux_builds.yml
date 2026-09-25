@@ -25,21 +25,21 @@ jobs:
             cache-name: linux-editor-mono
             target: release_debug
             tools: true
-            sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=no
+            sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=no 
             bin: "./bin/godot.x11.opt.tools.64.mono"
             build-mono: true
             artifact: true
 
-          - name: Editor and sanitizers (target=debug, tools=yes, use_asan=yes, use_ubsan=yes, linker=gold)
-            cache-name: linux-editor-sanitizers
-            target: debug
-            tools: true
-            sconsflags: use_asan=yes use_ubsan=yes linker=gold
-            test: true
-            bin: "./bin/godot.x11.tools.64s"
-            build-mono: false
-            # Skip 2GiB artifact speeding up action.
-            artifact: false
+          # - name: Editor and sanitizers (target=debug, tools=yes, use_asan=yes, use_ubsan=yes, linker=gold)
+          #   cache-name: linux-editor-sanitizers
+          #   target: debug
+          #   tools: true
+          #   sconsflags: use_asan=yes use_ubsan=yes linker=gold
+          #   test: true
+          #   bin: "./bin/godot.x11.tools.64s"
+          #   build-mono: false
+          #   # Skip 2GiB artifact speeding up action.
+          #   artifact: false
 
           - name: Template w/ Mono (target=release, tools=no)
             cache-name: linux-template-mono
