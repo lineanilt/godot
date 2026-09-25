@@ -1,39 +1,63 @@
 import os
 import re
 
-# The folders you actually touched. DO NOT add 'thirdparty' or 'core' if you didn't touch them!
+# The folders you want to scan (adjust if you modified other folders)
 TARGET_DIRS = ['drivers/gles3', 'scene/3d', 'scene/main', 'servers/visual']
+EXTENSIONS = ('.cpp', '.h', '.glsl')
 
-# The AI junk patterns you want to annihilate
-JUNK_PATTERNS = [
-    re.compile(r'//\s*<---.*ADD THIS'),
-    re.compile(r'//\s*<---.*WE ADDED THIS'),
-    re.compile(r'//\s*<---.*MOVED HERE!'),
-    re.compile(r'//\s*-{10,}'),          # Matches // -------------
-]
+# Regex to capture C-style comments:
+# Group 1: // single line comments
+# Group 2: /* multi line comments */
+COMMENT_PATTERN = re.compile(r'(//.*?$)|(/\*.*?\*/)', re.MULTILINE | re.DOTALL)
 
-def clean_file(filepath):
+
+def get_comments(filepath):
     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-        lines = f.readlines()
+        content = f.read()
 
-    new_lines = []
-    modified = False
+    comments = []
+    # Find all matches in the file
+    for match in COMMENT_PATTERN.finditer(content):
+        comment_text = match.group(0).strip()
+        # Calculate which line number this comment starts on
+        line_num = content.count('\n', 0, match.start()) + 1
+        comments.append((line_num, comment_text))
 
-    for line in lines:
-        if any(pattern.search(line) for pattern in JUNK_PATTERNS):
-            modified = True
-            continue # Skip this line
-        new_lines.append(line)
+    return comments
 
-    if modified:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-        print(f"Cleaned: {filepath}")
 
-for d in TARGET_DIRS:
-    for root, _, files in os.walk(d):
-        for file in files:
-            if file.endswith(('.cpp', '.h', '.glsl', '.xml')):
-                clean_file(os.path.join(root, file))
+def main():
+    total_comments = 0
+    output_file = "all_comments_found.txt"
 
-print("Sweep complete.")
+    with open(output_file, 'w', encoding='utf-8') as out:
+        for d in TARGET_DIRS:
+            if not os.path.exists(d):
+                continue
+
+            for root, _, files in os.walk(d):
+                for file in files:
+                    if file.endswith(EXTENSIONS):
+                        filepath = os.path.join(root, file)
+                        comments = get_comments(filepath)
+
+                        if comments:
+                            out.write(f"\n{'='*60}\n")
+                            out.write(
+                                f"FILE: {filepath} ({len(comments)} comments)\n")
+                            out.write(f"{'='*60}\n")
+
+                            for line_num, text in comments:
+                                # Clean up formatting for multi-line comments in the output log
+                                safe_text = text.replace('\n', '\n\t\t')
+                                out.write(f"Line {line_num:<5} | {
+                                          safe_text}\n")
+
+                            total_comments += len(comments)
+
+    print(f"Done! Found {total_comments} comments.")
+    print(f"Results saved to: {output_file}")
+
+
+if __name__ == '__main__':
+    main()
