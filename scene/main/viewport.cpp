@@ -3554,7 +3554,7 @@ void Viewport::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shadow_atlas_size", "size"), &Viewport::set_shadow_atlas_size);
 	ClassDB::bind_method(D_METHOD("get_shadow_atlas_size"), &Viewport::get_shadow_atlas_size);
 
-	ClassDB::bind_method(D_METHOD("set_shadow_atlas_16_bits", "16_bits"), &Viewport::set_shadow_atlas_16_bits);
+	ClassDB::bind_method(D_METHOD("set_shadow_atlas_16_bits", "p_16_bits"), &Viewport::set_shadow_atlas_16_bits);
 	ClassDB::bind_method(D_METHOD("is_shadow_atlas_16_bits"), &Viewport::is_shadow_atlas_16_bits);
 
 	ClassDB::bind_method(D_METHOD("set_snap_controls_to_pixels", "enabled"), &Viewport::set_snap_controls_to_pixels);
