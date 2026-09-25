@@ -27,6 +27,7 @@ It seems quite stable and Mono works.
 
 #### License
 MPL2.0. Godot and its PRs were MIT.
+Games you export with Godot is not automatically MPL or MIT.
 
 ### Building
 You can just build this like you would a vanilla Godot 3.x version.
@@ -35,20 +36,18 @@ Though I just use this:
 # Editor
 scons -j4 platform=x11 target=release_debug use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes mono_glue=yes mono_static=yes copy_mono_root=yes
 # Exports
-scons -j4 platform=x11 tools=no target=release_debug use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes mono_static=yes copy_mono_root=yes
-scons -j4 platform=x11 tools=no target=release use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes mono_static=yes copy_mono_root=yes
+scons -j4 platform=x11 tools=no target=release_debug use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes mono_glue=yes mono_static=yes copy_mono_root=yes
+scons -j4 platform=x11 tools=no target=release use_llvm=yes linker=lld use_ccache=yes module_mono_enabled=yes mono_glue=yes mono_static=yes copy_mono_root=yes
 # Windows
-scons platform=windows tools=no target=release -j4 use_ccache=yes module_mono_enabled=yes module_glue_enabled=yes bits=64 mono_prefix="/path/to/windows_mono" mono_static=yes copy_mono_root=yes
+scons platform=windows tools=no target=release -j4 use_ccache=yes module_mono_enabled=yes mono_glue=yes bits=64 mono_prefix="/path/to/windows_mono" mono_static=yes copy_mono_root=yes
 
 # Stripping
 strip bin/godot.x11.opt.64.llvm.mono bin/godot.x11.opt.debug.64.llvm.mono bin/godot.x11.opt.tools.64.llvm.mono bin/godot.windows.opt.64.mono.exe
-
-# copying Export Templates
-cp bin/godot.x11.opt.64.llvm.mono ~/.local/share/godot/templates/3.7.dev/linux_x11_64_release
-cp bin/godot.x11.opt.debug.64.llvm.mono ~/.local/share/godot/templates/3.7.dev/linux_x11_64_debug
-cp bin/godot.windows.opt.64.mono.exe ~/.local/share/godot/templates/3.7.dev/windows_64_release.exe
 ```
 (Linux)
+You'll have to download BCLs though.
+You can get it here: `https://github.com/godotengine/godot-mono-builds/releases`
+
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
