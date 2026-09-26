@@ -27,7 +27,7 @@ jobs:
             target: release_debug
             tools: true
             sconsflags: module_mono_enabled=yes mono_glue=no
-            bin: "./bin/godot.windows.opt.tools.64.exe"
+            bin: "./bin/godot.windows.opt.tools.64.mono.exe"
             build-mono: true
 
           - name: Template w/ Mono (target=release, tools=no)
@@ -35,7 +35,7 @@ jobs:
             target: release
             tools: false
             sconsflags: module_mono_enabled=yes mono_glue=no
-            bin: "./bin/godot.windows.opt.64.exe"
+            bin: "./bin/godot.windows.opt.64.mono.exe"
             build-mono: false
 
     steps:
@@ -110,9 +110,6 @@ jobs:
 
           # Strip the Windows executable to save size
           x86_64-w64-mingw32-strip bin/*.exe || true
-
-          # We NO LONGER need to manually copy DLLs or BCL files here!
-          # mono_static=yes and copy_mono_root=yes already did the magic.
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
