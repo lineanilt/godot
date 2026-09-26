@@ -4,7 +4,7 @@
   </a>
 </p>
 
-This is a **fork of Godot 3.x** that adds a bunch of new features and merges some PRs.
+This is a **fork of Godot 3.x** that adds a bunch of new features and merges some PRs. <p title="This fork is mostly just graphical upgrades, so it won't write data to your project vanilla Godot doesn't know. Also, please read Flaws.">It can be a drop-in replacement for vanilla 3.x. Hover over this line for details.</p>
 - Export tooltips. `## Like this.` (35716)
 - NodePath export hints. (39155 - the bastards closed the PR.)
 - Shadow dither. (53967 - I added onto this with some other stuff.)
