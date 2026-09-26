@@ -3,12 +3,11 @@ on:
   workflow_call:
 
 # Global Settings
-# SCONS_CACHE for windows must be set in the build environment
 env:
   # Only used for the cache key. Increment version to force clean build.
   GODOT_BASE_BRANCH: 3.x
-  SCONSFLAGS: verbose=yes warnings=no werror=no debug_symbols=no
-  SCONS_CACHE_MSVC_CONFIG: true
+  # Added use_mingw=yes to force cross-compilation
+  SCONSFLAGS: verbose=yes warnings=no werror=no debug_symbols=no use_mingw=yes
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-windows
@@ -16,43 +15,59 @@ concurrency:
 
 jobs:
   build-windows:
-    # Windows 10 with latest image
-    runs-on: "windows-latest"
+    # Switched to Ubuntu for lightning-fast MinGW cross-compilation
+    runs-on: "ubuntu-22.04"
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Editor (target=release_debug, tools=yes)
-            cache-name: windows-editor
+          - name: Editor w/ Mono (target=release_debug, tools=yes)
+            cache-name: windows-editor-mono
             target: release_debug
             tools: true
+            sconsflags: module_mono_enabled=yes mono_glue=no
             bin: "./bin/godot.windows.opt.tools.64.exe"
+            build-mono: true
 
-          - name: Template (target=release, tools=no)
-            cache-name: windows-template
+          - name: Template w/ Mono (target=release, tools=no)
+            cache-name: windows-template-mono
             target: release
             tools: false
+            sconsflags: module_mono_enabled=yes mono_glue=no
+            bin: "./bin/godot.windows.opt.64.exe"
+            build-mono: false
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore Godot build cache
-        uses: ./.github/actions/godot-cache-restore
-        with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
+      - name: Install Dependenecies
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
 
-      - name: Setup python and scons
-        uses: ./.github/actions/godot-deps
+          sudo apt-get install --no-install-recommends -y \
+            mingw-w64 wine64 wine32 wine xvfb unzip wget
 
-      - name: Setup MSVC problem matcher
-        uses: ammaraskar/msvc-problem-matcher@master
 
-      - name: Compilation
+          mkdir -p mono_win64/lib
+
+          # 1. Download the SDK (Headers and static libs)
+          wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/windows-x86_64.zip
+          unzip -q windows-x86_64.zip -d mono_win64
+
+          # 2. Download the BCL (mscorlib.dll, etc.) and put it inside the lib folder
+          # so copy_mono_root=yes can find it at mono_win64/lib/mono/4.5
+          wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/bcl-desktop-win32.zip
+          unzip -q bcl-desktop-win32.zip -d mono_win64/lib
+
+
+      # Pass 1: Build without glue
+      - name: Compilation (mono_glue=no)
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: ${{ env.SCONSFLAGS }}
+          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_prefix=${{ github.workspace }}/mono_win64 mono_static=yes copy_mono_root=yes
           platform: windows
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
@@ -63,9 +78,35 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      - name: Prepare artifact
+      # Generate glue using Wine
+      - name: Generate Mono glue code
+        if: ${{ matrix.build-mono }}
         run: |
-          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          xvfb-run wine64 ${{ matrix.bin }} --generate-mono-glue modules/mono/glue || true
+
+      # Pass 2: Rebuild with glue
+      - name: Compilation (mono_glue=yes)
+        uses: ./.github/actions/godot-build
+        if: ${{ matrix.build-mono }}
+        with:
+          # This time with mono_glue=yes
+          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes mono_prefix=${{ github.workspace }}/mono_win64 mono_static=yes copy_mono_root=yes
+          platform: windows
+          target: ${{ matrix.target }}
+          tools: ${{ matrix.tools }}
+
+      # Package the artifact
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          # Clean up unnecessary compiler files (.lib, .exp)
+          rm -f bin/*.exp bin/*.lib bin/*.pdb
+
+          # Strip the Windows executable to save size
+          x86_64-w64-mingw32-strip bin/*.exe || true
+
+          # We NO LONGER need to manually copy DLLs or BCL files here!
+          # mono_static=yes and copy_mono_root=yes already did the magic.
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
