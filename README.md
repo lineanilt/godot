@@ -29,7 +29,19 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
 
 I probably missed some but still.
 
-It seems quite stable and Mono works.
+It's quite stable and Mono works.
+
+The main point of this fork is that it's, well, Godot 3 and not Godot 4. 
+People sticking to Godot 3 may have a lot of reasons for it, but for me personally, it's: 
+- The switch to Vulkan.
+- The direction of where Godot is headed.
+- The shear ignorance of Godot Foundation.
+- The fact that Godot is creating an "Asset Store" that has _monetised_ assets.
+- Stability.
+
+And I made this fork because I wanted new features without switching major engine versions.
+I also wanted to stay on OpenGL, and I wanted the lightness of Godot 3.
+Read Flaws for more details.
 
 #### License
 MPL2.0. Godot and its PRs were MIT.
