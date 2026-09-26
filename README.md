@@ -74,7 +74,18 @@ If your PR looks sick and works well, I might merge it.
 ###### *Side note, don't bother creating a PR for the official repo's 3.x branch. It is effectively dead and the only commits you'll see there are from @lawnjelly (<3) doing minor bugfixes. Your PRs won't get noticed and they literally close ones that \*they\* ignored because the OP was 'inactive'. Literally just explore the 3.x milestone's PR list and you'll see.*
 
 ### Usage
-Only the editors are up for now.
+Editor: Releases page -> Download -> Extract -> Run.
+Templates (Linux): Extract to ~/.local/share/godot/templates/3.7.dev.mono/
+Templates (Windows): Extract to Your User/AppData/Roaming/Godot/templates/3.7.dev.mono/
+
+For Mono templates, you also have to download BCLs from [here](https://github.com/godotengine/godot-mono-builds/releases/tag/release-ae49eba). (don't worry, this is vanilla behavior)
+
+For Windows:
+- Download BCL (win32 - this is not 32-bit).
+- Extract the BCL, and inside `net_4_x-win32`, copy its contents.
+- At your Templates path, create these folders if you haven't: `bcl`, and inside that, `windows`.
+- Paste the contents inside `windows`.
+- Test an export in the Editor.
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
