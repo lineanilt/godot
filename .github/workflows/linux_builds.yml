@@ -110,6 +110,13 @@ jobs:
         run: |
           DRI_PRIME=0 xvfb-run ${{ matrix.bin }} --generate-mono-glue modules/mono/glue || true
 
+      - name: Upload Mono Glue
+        if: ${{ matrix.build-mono }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-mono-glue
+          path: modules/mono/glue
+
       # Rebuild with mono
       - name: Compilation (mono_glue=yes)
         uses: ./.github/actions/godot-build

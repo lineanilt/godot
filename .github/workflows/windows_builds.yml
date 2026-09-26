@@ -69,33 +69,17 @@ jobs:
           unzip -q bcl-desktop-win32.zip -d mono_win64/lib
 
 
-      # Pass 1: Build without glue
-      - name: Compilation (mono_glue=no)
-        uses: ./.github/actions/godot-build
-        with:
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_prefix=${{ github.workspace }}/mono_win64/desktop-windows-x86_64-release mono_static=yes copy_mono_root=yes
-          platform: windows
-          target: ${{ matrix.target }}
-          tools: ${{ matrix.tools }}
 
-      - name: Save Godot build cache
-        uses: ./.github/actions/godot-cache-save
+      - name: Download Mono Glue
+        uses: actions/download-artifact@v4
         with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
-
-      # Generate glue using Wine
-      - name: Generate Mono glue code
-        if: ${{ matrix.build-mono }}
-        run: |
-          xvfb-run wine64 ${{ matrix.bin }} --generate-mono-glue modules/mono/glue || true
+          name: godot-mono-glue
+          path: modules/mono/glue
 
       # Pass 2: Rebuild with glue
       - name: Compilation (mono_glue=yes)
         uses: ./.github/actions/godot-build
-        if: ${{ matrix.build-mono }}
         with:
-          # This time with mono_glue=yes
           sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes mono_prefix=${{ github.workspace }}/mono_win64/desktop-windows-x86_64-release mono_static=yes copy_mono_root=yes
           platform: windows
           target: ${{ matrix.target }}
