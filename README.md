@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://godotengine.org">
+  <a href="https://github.com/lineanilt/godot/tags">
     <img src="fork_icon.svg" width="256" alt="Godot Engine logo">
   </a>
 </p>
