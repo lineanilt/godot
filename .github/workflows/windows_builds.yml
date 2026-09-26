@@ -73,7 +73,7 @@ jobs:
       - name: Compilation (mono_glue=no)
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_prefix=${{ github.workspace }}/mono_win64 mono_static=yes copy_mono_root=yes
+          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_prefix=${{ github.workspace }}/mono_win64/desktop-windows-x86_64-release mono_static=yes copy_mono_root=yes
           platform: windows
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
@@ -96,7 +96,7 @@ jobs:
         if: ${{ matrix.build-mono }}
         with:
           # This time with mono_glue=yes
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes mono_prefix=${{ github.workspace }}/mono_win64 mono_static=yes copy_mono_root=yes
+          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes mono_prefix=${{ github.workspace }}/mono_win64/desktop-windows-x86_64-release mono_static=yes copy_mono_root=yes
           platform: windows
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
