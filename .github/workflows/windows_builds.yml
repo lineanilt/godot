@@ -59,14 +59,16 @@ jobs:
 
           mkdir -p mono_win64/lib
 
-          # 1. Download the SDK (Headers and static libs)
+          # Download the SDK (Headers and static libs)
           wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/windows-x86_64.zip
           unzip -q windows-x86_64.zip -d mono_win64
 
-          # 2. Download the BCL (mscorlib.dll, etc.) and put it inside the lib folder
-          # so copy_mono_root=yes can find it at mono_win64/lib/mono/4.5
           wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/bcl-desktop-win32.zip
-          unzip -q bcl-desktop-win32.zip -d mono_win64/desktop-windows-x86_64-release/lib
+          unzip -q bcl-desktop-win32.zip -d temp_bcl
+
+          mkdir -p mono_win64/desktop-windows-x86_64-release/lib/mono
+          mv temp_bcl/net_4_x-win32 mono_win64/desktop-windows-x86_64-release/lib/mono/4.5
+          rm -rf temp_bcl bcl-desktop-win32.zip
 
 
 
