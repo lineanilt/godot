@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Dependenecies
+      - name: Install Dependenecies & Setup
         shell: bash
         run: |
           sudo dpkg --add-architecture i386
@@ -53,6 +53,9 @@ jobs:
               libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
               libspeechd-dev speech-dispatcher scons
 
+
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
           mkdir -p mono_win64/lib
 
