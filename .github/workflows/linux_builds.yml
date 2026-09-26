@@ -13,8 +13,77 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ==========================================
+  # JOB 1: Generate Mono Glue First
+  # ==========================================
+  generate-glue:
+    runs-on: "ubuntu-22.04"
+    name: Generate Mono Glue
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        shell: bash
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/{azure,microsoft}*
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends build-essential pkg-config libx11-dev \
+              libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev \
+              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
+              libspeechd-dev speech-dispatcher
+
+      - name: Free disk space on runner
+        run: |
+          echo "Disk usage before:" && df -h
+          sudo rm -rf /usr/local/lib/android
+          echo "Disk usage after:" && df -h
+
+      # Give the stub generator its own cache so it builds very fast on later runs
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: linux-editor-mono-stub
+        continue-on-error: true
+
+      - name: Setup python and scons
+        uses: ./.github/actions/godot-deps
+
+      - name: Setup GCC problem matcher
+        uses: ammaraskar/gcc-problem-matcher@master
+
+      # Build the stub (mono_glue=no)
+      - name: Compilation (Editor Stub)
+        uses: ./.github/actions/godot-build
+        with:
+          sconsflags: ${{ env.SCONSFLAGS }} module_mono_enabled=yes mono_static=yes mono_glue=no
+          platform: linuxbsd
+          target: release_debug
+          tools: true
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: linux-editor-mono-stub
+        continue-on-error: true
+
+      # Generate glue using the stub
+      - name: Generate Mono glue code
+        run: |
+          DRI_PRIME=0 xvfb-run ./bin/godot.x11.opt.tools.64.mono --generate-mono-glue modules/mono/glue || true
+
+      # Make glue available to the build matrix
+      - name: Upload Mono Glue Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-mono-glue
+          path: modules/mono/glue
+          retention-days: 1 # Only kept for matrix download
+
+  # ==========================================
+  # JOB 2: Matrix build the actual targets
+  # ==========================================
   build-linux:
-    # Stay one LTS before latest to increase portability of Linux artifacts.
+    needs: generate-glue # Waits for the glue job to finish
     runs-on: "ubuntu-22.04"
     name: ${{ matrix.name }}
     strategy:
@@ -25,11 +94,12 @@ jobs:
             cache-name: linux-editor-mono
             target: release_debug
             tools: true
-            sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=no 
+            sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=yes
             bin: "./bin/godot.x11.opt.tools.64.mono"
-            build-mono: true
+            requires-glue: true
             artifact: true
 
+          # Sanitizers job left commented out like your original, but keeping structure intact
           # - name: Editor and sanitizers (target=debug, tools=yes, use_asan=yes, use_ubsan=yes, linker=gold)
           #   cache-name: linux-editor-sanitizers
           #   target: debug
@@ -37,8 +107,7 @@ jobs:
           #   sconsflags: use_asan=yes use_ubsan=yes linker=gold
           #   test: true
           #   bin: "./bin/godot.x11.tools.64s"
-          #   build-mono: false
-          #   # Skip 2GiB artifact speeding up action.
+          #   requires-glue: false
           #   artifact: false
 
           - name: Template w/ Mono (target=release, tools=no)
@@ -46,7 +115,7 @@ jobs:
             target: release
             tools: false
             sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=yes debug_symbols=no
-            build-mono: false
+            requires-glue: true
             artifact: true
 
           - name: Minimal template (target=release, tools=no, everything disabled)
@@ -54,7 +123,7 @@ jobs:
             target: release
             tools: false
             sconsflags: modules_enabled_by_default=no disable_3d=yes disable_advanced_gui=yes deprecated=no minizip=no debug_symbols=no
-            build-mono: false
+            requires-glue: false
             artifact: false
 
     steps:
@@ -63,10 +132,8 @@ jobs:
       - name: Linux dependencies
         shell: bash
         run: |
-          # Azure repositories are flaky, remove them.
           sudo rm -f /etc/apt/sources.list.d/{azure,microsoft}*
           sudo apt-get update
-          # The actual dependencies.
           sudo apt-get install --no-install-recommends build-essential pkg-config libx11-dev \
               libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev \
               libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
@@ -90,6 +157,15 @@ jobs:
       - name: Setup GCC problem matcher
         uses: ammaraskar/gcc-problem-matcher@master
 
+      # Download the glue folder BEFORE compilation if the matrix job needs it
+      - name: Download Mono Glue
+        if: ${{ matrix.requires-glue }}
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-mono-glue
+          path: modules/mono/glue
+
+      # Single compilation pass now handles Mono properly
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
@@ -104,30 +180,6 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      # Generate mono glue
-      - name: Generate Mono glue code
-        if: ${{ matrix.build-mono }}
-        run: |
-          DRI_PRIME=0 xvfb-run ${{ matrix.bin }} --generate-mono-glue modules/mono/glue || true
-
-      - name: Upload Mono Glue
-        if: ${{ matrix.build-mono }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: godot-mono-glue
-          path: modules/mono/glue
-
-      # Rebuild with mono
-      - name: Compilation (mono_glue=yes)
-        uses: ./.github/actions/godot-build
-        if: ${{ matrix.build-mono }}
-        with:
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes
-          platform: linuxbsd
-          target: ${{ matrix.target }}
-          tools: ${{ matrix.tools }}
-
-      # Download and extract zip archive with project, folder is renamed to be able to easy change used project
       - name: Download test project
         if: ${{ matrix.test }}
         run: |
@@ -135,21 +187,18 @@ jobs:
           unzip 3.x.zip
           mv "regression-test-project-3.x" "test_project"
 
-      # Editor is quite complicated piece of software, so it is easy to introduce bug here
       - name: Open and close editor
         if: ${{ matrix.test }}
         run: |
           DRI_PRIME=0 xvfb-run ${{ matrix.bin }} --audio-driver Dummy -e -q --path test_project 2>&1 | tee sanitizers_log.txt || true
           misc/scripts/check_ci_log.py sanitizers_log.txt
 
-      # Run test project
       - name: Run project
         if: ${{ matrix.test }}
         run: |
           DRI_PRIME=0 xvfb-run ${{ matrix.bin }} 30 --video-driver GLES3 --audio-driver Dummy --path test_project 2>&1 | tee sanitizers_log.txt || true
           misc/scripts/check_ci_log.py sanitizers_log.txt
 
-      # Check class reference
       - name: Check for class reference updates
         if: ${{ matrix.test }}
         run: |
