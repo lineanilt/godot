@@ -63,15 +63,24 @@ jobs:
             (cd "$dir_name" && zip -r "../../dist/godot-$dir_name.zip" ./*)
           done
 
+      - name: Delete old release & tag
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
           tag_name: "latest"
+          target_commitish: ${{ github.sha }}
           name: "Latest GHA Build"
+          make_latest: true
           draft: false
           prerelease: false
-          generate_release_notes: false
+          body: |
+            Automated build for commit `${{ github.sha }}`.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
