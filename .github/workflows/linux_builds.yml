@@ -69,7 +69,7 @@ jobs:
       # Generate glue using the stub
       - name: Generate Mono glue code
         run: |
-          DRI_PRIME=0 xvfb-run ./bin/godot.x11.opt.tools.64.mono --generate-mono-glue modules/mono/glue || true
+          DRI_PRIME=0 xvfb-run ./bin/godot.x11.opt.tools.64.llvm.mono --generate-mono-glue modules/mono/glue
 
       # Make glue available to the build matrix
       - name: Upload Mono Glue Artifact
@@ -95,7 +95,7 @@ jobs:
             target: release_debug
             tools: true
             sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=yes
-            bin: "./bin/godot.x11.opt.tools.64.mono"
+            bin: "./bin/godot.x11.opt.tools.64.llvm.mono"
             requires-glue: true
             artifact: true
 
