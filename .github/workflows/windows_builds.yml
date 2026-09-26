@@ -48,7 +48,10 @@ jobs:
           sudo apt-get update
 
           sudo apt-get install --no-install-recommends -y \
-            mingw-w64 wine64 wine32 wine xvfb unzip wget
+            mingw-w64 wine64 wine32 wine xvfb unzip wget build-essential pkg-config libx11-dev \
+              libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev \
+              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
+              libspeechd-dev speech-dispatcher scons
 
 
           mkdir -p mono_win64/lib
