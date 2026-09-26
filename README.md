@@ -75,10 +75,12 @@ If your PR looks sick and works well, I might merge it.
 
 ### Usage
 Editor: Releases page -> Download -> Extract -> Run.
+
 Templates (Linux): Extract to ~/.local/share/godot/templates/3.7.dev.mono/
+
 Templates (Windows): Extract to Your User/AppData/Roaming/Godot/templates/3.7.dev.mono/
 
-For Mono templates, you also have to download BCLs from [here](https://github.com/godotengine/godot-mono-builds/releases/tag/release-ae49eba). (don't worry, this is vanilla behavior)
+For Mono templates, you also have to download BCLs. Get it from [here](https://github.com/godotengine/godot-mono-builds/releases/tag/release-ae49eba). (don't worry, this is vanilla behavior)
 
 For Windows:
 - Download BCL (win32 - this is not 32-bit).
