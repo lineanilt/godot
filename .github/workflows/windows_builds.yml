@@ -63,11 +63,19 @@ jobs:
           wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/windows-x86_64.zip
           unzip -q windows-x86_64.zip -d mono_win64
 
+
           wget https://github.com/godotengine/godot-mono-builds/releases/download/release-ae49eba/bcl-desktop-win32.zip
           unzip -q bcl-desktop-win32.zip -d temp_bcl
 
-          mkdir -p mono_win64/desktop-windows-x86_64-release/lib/mono
-          mv temp_bcl/net_4_x-win32 mono_win64/desktop-windows-x86_64-release/lib/mono/4.5
+          # Find the exact folder containing mscorlib.dll inside temp_bcl
+          BCL_SRC=$(dirname $(find temp_bcl -name "mscorlib.dll" | head -n 1))
+          echo "Found BCL at: $BCL_SRC"
+
+          # Create the exact path SCons wants and copy everything in
+          mkdir -p mono_win64/desktop-windows-x86_64-release/lib/mono/4.5
+          cp -r "$BCL_SRC"/* mono_win64/desktop-windows-x86_64-release/lib/mono/4.5/
+
+          # Clean up
           rm -rf temp_bcl bcl-desktop-win32.zip
 
 
