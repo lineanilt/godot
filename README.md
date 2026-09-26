@@ -80,6 +80,10 @@ Templates (Linux): Extract to ~/.local/share/godot/templates/3.7.dev.mono/
 
 Templates (Windows): Extract to Your User/AppData/Roaming/Godot/templates/3.7.dev.mono/
 
+You'll have to rename the template executables accordingly though:
+Linux Release: `linux_x11_64_release`
+Windows Release: `windows_64_release.exe`
+
 For Mono templates, you also have to download BCLs. Get it from [here](https://github.com/godotengine/godot-mono-builds/releases/tag/release-ae49eba). (don't worry, this is vanilla behavior)
 
 For Windows:
@@ -88,6 +92,9 @@ For Windows:
 - At your Templates path, create these folders if you haven't: `bcl`, and inside that, `windows`.
 - Paste the contents inside `windows`.
 - Test an export in the Editor.
+- After exporting, copy `mono-2.0-sgen.dll` from a runtime on the previous link or one that's already in your templates folder into your game export.
+
+Please make sure your export templates are the same version as your editor.
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
@@ -97,8 +104,10 @@ For Windows:
 - It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
 - Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
 
-Unless you're targeting _really_ old hardware that does not support GL3.3 or GL4.x (which is like... older than 2009), these aren't exactly major issues.  
-And as for mobile, well, it compiles, but it wouldn't _compile shaders_ due to MRTs. 
+Unless you're targeting _really_ old hardware that does not support GL3.3 or GL4.x (which is like... GPUs older than 2009), these aren't exactly major issues. 
+Even Ivy Bridge supports GL4.2 (with 4.6 extensions) on Linux (4.0 on Windows).
+
+And as for mobile, well, it compiles, but it wouldn't _compile shaders_ due to MRTs. Mobile also isn't the scope of this engine.
 
 ## Original README
 ---
