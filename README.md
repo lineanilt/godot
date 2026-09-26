@@ -83,6 +83,7 @@ Only the editors are up for now.
 - Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
 - It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
 - Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
+
 Unless you're targeting _really_ old hardware that does not support GL3.3 or GL4.x (which is like... older than 2009), these aren't exactly major issues.  
 And as for mobile, well, it compiles, but it wouldn't _compile shaders_ due to MRTs. 
 
