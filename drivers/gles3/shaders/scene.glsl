@@ -1597,14 +1597,11 @@ LIGHT_SHADER_CODE
 #endif //defined(USE_LIGHT_SHADER_CODE)
 }
 
-
-// 1. IGN (Interleaved Gradient Noise)
 float dither_ign(vec2 pos) {
 	const vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
 	return fract(magic.z * fract(dot(pos, magic.xy)));
 }
 
-// 2. Bayer Matrix (16x)
 float dither_bayer16(vec2 pos) {
 	ivec2 p = ivec2(pos) & 3;
 	int index = p.y * 4 + p.x;
@@ -1618,7 +1615,6 @@ float dither_bayer16(vec2 pos) {
 }
 
 
-// 3. R2 Sequence (Decorrelated with cell phase to eliminate lattice lines)
 float dither_r2(vec2 pos) {
 	uvec2 p = uvec2(pos);
 	uint cell_hash = ((p.x >> 2u) * 0x1f1f1f1fu) ^ ((p.y >> 2u) * 0x5a5a5a5au);
@@ -1627,20 +1623,16 @@ float dither_r2(vec2 pos) {
 	return fract(dot(pos, vec2(0.754877666, 0.569840291)) + jitter);
 }
 
-// 4. No-Clump Noise (High-pass Nyquist Blue Noise: zero lines, zero clumping)
-float dither_no_clump(vec2 pos) {
+float dither_white(vec2 pos) {
 	uvec2 p = uvec2(pos);
 	uint h = (p.x * 0x27d4eb2du) ^ (p.y * 0x85ebca6bu);
 	h = (h ^ (h >> 15u)) * 0xc2b2ae35u;
 	h = (h ^ (h >> 16u)) * 0x85ebca6bu;
 	float white = float(h) * (1.0 / 4294967296.0);
-	// Checkerboard phase inversion pushes spectral energy to the Nyquist limit,
-	// guaranteeing adjacent pixels are anti-correlated without any directional bias.
 	return ((p.x + p.y) & 1u) == 0u ? white : (1.0 - white);
 }
 
-// 5. Screen-Space Jitter (White noise)
-float dither_screen_jitter(vec2 pos) {
+float dither_sine(vec2 pos) {
 	return fract(sin(dot(pos, vec2(12.9898, 78.233))) * 43758.5453123);
 }
 
@@ -1652,9 +1644,9 @@ float get_shadow_dither(vec2 pos, float mode_f, float temporal_offset) {
 	} else if (mode == 2) {
 		d = dither_r2(pos);
 	} else if (mode == 3) {
-		d = dither_no_clump(pos);
+		d = dither_white(pos);
 	} else if (mode == 4) {
-		d = dither_screen_jitter(pos);
+		d = dither_sine(pos);
 	} else {
 		d = dither_ign(pos);
 	}

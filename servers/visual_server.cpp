@@ -2702,7 +2702,7 @@ VisualServer::VisualServer() {
 	GLOBAL_DEF_RST("rendering/quality/shadow_atlas/cubemap_size", 512);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadow_atlas/cubemap_size", PropertyInfo(Variant::INT, "rendering/quality/shadow_atlas/cubemap_size", PROPERTY_HINT_RANGE, "64,16384,64"));
 	GLOBAL_DEF_RST("rendering/quality/shadow_atlas/16_bits", true);
-	
+
 	GLOBAL_DEF("rendering/quality/shadow_atlas/quadrant_0_subdiv", 1);
 	GLOBAL_DEF("rendering/quality/shadow_atlas/quadrant_1_subdiv", 2);
 	GLOBAL_DEF("rendering/quality/shadow_atlas/quadrant_2_subdiv", 3);
@@ -2717,7 +2717,7 @@ VisualServer::VisualServer() {
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/filter_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/filter_mode", PROPERTY_HINT_ENUM, "Disabled (Fastest),PCF5 (Fast),PCF13 (Average),PCF25 (Slow)"));
 	GLOBAL_DEF("rendering/quality/shadows/use_dithering", false);
 	GLOBAL_DEF("rendering/quality/shadows/dither_mode", 0);
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/dither_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/dither_mode", PROPERTY_HINT_ENUM, "IGN,Bayer Matrix (16x),R2,No-Clump Noise,Screen-Space Jitter"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/dither_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/dither_mode", PROPERTY_HINT_ENUM, "IGN,Bayer Matrix (16x),R2,White Noise,Sine-based Noise"));
 	GLOBAL_DEF("rendering/quality/shadows/temporal_dither", false);
 	GLOBAL_DEF("rendering/quality/reflections/texture_array_reflections", true);
 	GLOBAL_DEF("rendering/quality/reflections/texture_array_reflections.mobile", false);
