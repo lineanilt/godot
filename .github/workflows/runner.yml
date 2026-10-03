@@ -65,7 +65,8 @@ jobs:
 
       - name: Delete old release & tag
         run: |
-          gh release delete latest --cleanup-tag --yes || true
+          gh release delete latest --yes -R ${{ github.repository }} || true
+          gh api -X DELETE repos/${{ github.repository }}/git/refs/tags/latest || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
