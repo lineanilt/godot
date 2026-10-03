@@ -22,8 +22,15 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
 - (self) Some new shader built-ins. Namely:
 	- `CUSTOM_PASS_DATA` (vec4).
 	- `CUSTOM_TEXTURE` to view `CUSTOM_PASS_DATA` (sampler2D). 16-bit.
-		- For some reason, you need to apply an ALPHA to your shader to view it. Not sure why.
-	- `textureGather`. I forgot what OpenGL version this requires.
+		- You need to apply an ALPHA to your shader to view it due to how it's setup in rendering.
+  	- `MATERIAL_ID`.
+	- `SLN_TEXTURE`. "Shadows", "Lighting", "Normal. 32-bit.
+  		- R: Shadow
+  	 	- G: Light
+  	  	- B: Packed Normals (octahedral, view-space)
+  	  	- A: Material ID
+     	- ALPHA issue also applies here.  
+	- `textureGather`. Requires OpenGL 4.0 or ES 3.1.
 - Some contact shadow improvements. (self)
 - Depth texture can be accessed in CanvasItems. Make sure you have a proper 3D viewport, though. (self)
 
@@ -35,7 +42,7 @@ The main point of this fork is that it's, well, Godot 3 and not Godot 4.
 People sticking to Godot 3 may have a lot of reasons for it, but for me personally, it's: 
 - The switch to Vulkan.
 - The direction of where Godot is headed.
-- The shear ignorance of Godot Foundation.
+- The sheer ignorance of Godot Foundation.
 - The fact that Godot is creating an "Asset Store" that has _monetised_ assets.
 - Stability.
 
@@ -45,7 +52,12 @@ Read Flaws for more details.
 
 #### License
 MPL2.0. Godot and its PRs were MIT.
+
 Games you export with Godot are not automatically MPL or MIT.
+
+Basically:
+- Modifications you make to this fork are under MPL.
+- None of your game's code or assets or just anything to be simple are MPL.
 
 ### Building
 You can just build this like you would a vanilla Godot 3.x version.
@@ -95,11 +107,52 @@ For Windows:
 - After exporting, copy `mono-2.0-sgen.dll` from a runtime on the previous link or one that's already in your templates folder into your game export.
 
 Please make sure your export templates are the same version as your editor.
+ 
+---
+To decode the normals in `SLN_TEXTURE.b`, you can use these helpers:
+```glsl
+vec2 unpack_normal_2d(float p) {
+    float y = floor(p / 4096.0);
+    float x = mod(p, 4096.0);
+    return vec2(x, y) / 4095.0;
+}
+
+vec2 oct_wrap(vec2 v) {
+    return (1.0 - abs(v.yx)) * mix(vec2(-1.0), vec2(1.0), step(vec2(0.0), v));
+}
+
+vec3 decode_normal_oct(vec2 uv) {
+    // Remap [0, 1] range back to [-1, 1]
+    vec2 f = uv * 2.0 - 1.0;
+
+    // Z is derived from the Manhattan distance (L1 norm) on the octahedron
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+
+    // If z is negative, unwrap the reflected octahedral corners
+    if (n.z < 0.0) {
+        n.xy = oct_wrap(n.xy);
+    }
+
+    return normalize(n);
+}
+```
+And in-script, you can call them like this:
+```glsl
+void fragment() {
+    float packed_normal = texture(SLN_TEXTURE, SCREEN_UV).b;
+
+    vec2 oct_uv = unpack_normal_2d(packed_normal);
+    vec3 normal = decode_normal_oct(oct_uv);
+
+    ALBEDO = normal * 0.5 + 0.5;
+}
+```
+
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
 - This would not work on most mobile drivers.
-- On 16-texunit GPUs, you only have 3 samplers available for `spatial` shaders. I'd recommend texture packing or `sampler2DArray`s. I mean, that's what you should be doing in vanilla Godot 3 anyway, not just because of the limitations, but for performance.
+- On 16-texunit GPUs, you only have 3 samplers available for `spatial` shaders. I'd recommend texture packing or `sampler2DArray`s. I mean, that's what you should be doing in vanilla Godot 3 anyway, not just because of the limitations, but for performance. **Keep in mind that on most drivers, if you aren't using, say, `SCREEN_TEXTURE`, `DEPTH_TEXTURE`, and so on, you have additional samplers available. Unused textures are often just removed.**
 - Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
 - It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
 - Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
