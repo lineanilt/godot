@@ -1197,6 +1197,11 @@ ShaderCompilerGLES3::ShaderCompilerGLES3() {
 	actions[VS::SHADER_SPATIAL].renames["POINT_SIZE"] = "point_size";
 	actions[VS::SHADER_SPATIAL].renames["INSTANCE_ID"] = "gl_InstanceID";
 	actions[VS::SHADER_SPATIAL].renames["VERTEX_ID"] = "gl_VertexID";
+	actions[VS::SHADER_SPATIAL].renames["SLN_TEXTURE"] = "sln_texture";
+	actions[VS::SHADER_SPATIAL].renames["MATERIAL_ID"] = "material_id";
+
+	actions[VS::SHADER_SPATIAL].renames["SHADOWS"] = "shadows";
+	actions[VS::SHADER_SPATIAL].renames["LIGHT_ATTENUATION"] = "light_attenuation";
 
 	//builtins
 

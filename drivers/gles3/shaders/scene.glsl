@@ -989,7 +989,8 @@ uniform highp sampler2D screen_texture; // texunit:-8
 
 #endif
 
-uniform highp sampler2D custom_pass_texture; // texunit:-12
+uniform highp sampler2D custom_pass_texture; // texunit:-11
+uniform highp sampler2D sln_texture; // texunit:-12
 
 layout(location = 0) out vec4 frag_color_final;
 vec4 frag_color;
@@ -1004,9 +1005,14 @@ layout(location = 3) out float sss_buffer;
 #endif
 
 layout(location = 4) out vec4 custom_buffer;
+layout(location = 5) out float material_id_buffer;
+layout(location = 6) out vec4 sln_buffer;
 #endif //ubershader-skip
 
 vec4 custom_pass_data;
+float material_id = 0.0;
+vec3 current_shadow_attenuation = vec3(1.0);
+vec3 current_distance_attenuation = vec3(1.0);
 
 in highp vec4 position_interp;
 uniform highp sampler2D depth_buffer; // texunit:-9
@@ -1214,6 +1220,28 @@ float blob_shadows_multi_shadow(vec3 pos) {
 }
 #endif // USE_BLOB_SHADOWS
 
+vec2 oct_wrap(vec2 v) {
+    return (1.0 - abs(v.yx)) * mix(vec2(-1.0), vec2(1.0), step(vec2(0.0), v));
+}
+vec2 encode_normal_oct(vec3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    n.xy = n.z >= 0.0 ? n.xy : oct_wrap(n.xy);
+    return n.xy * 0.5 + 0.5;
+}
+
+// Packs 2D normal into a single float with 4096x4096 precision
+float pack_normal_2d(vec2 n) {
+    vec2 c = clamp(n, 0.0, 1.0) * 4095.0;
+    return floor(c.x) + floor(c.y) * 4096.0;
+}
+
+// Unpacks single float back into 2D normal
+vec2 unpack_normal_2d(float p) {
+    float y = floor(p / 4096.0);
+    float x = mod(p, 4096.0);
+    return vec2(x, y) / 4095.0;
+}
+
 #ifdef USE_CONTACT_SHADOWS //ubershader-skip
 
 // Interleaved Gradient Noise function for dithering
@@ -1383,6 +1411,8 @@ void light_compute(vec3 N, vec3 L, vec3 V, vec3 B, vec3 T, vec3 light_color, vec
 	vec3 albedo = diffuse_color;
 	vec3 light = L;
 	vec3 view = V;
+	vec3 shadows = current_shadow_attenuation;
+	vec3 light_attenuation = current_distance_attenuation;
 
 	/* clang-format off */
 
@@ -1643,8 +1673,8 @@ float sample_shadow(highp sampler2DShadow shadow, vec2 shadow_pixel_size, vec2 p
 
     // Dynamically adjust depth for tilted surfaces based on depth derivatives.
     // Flat surfaces get ~0 bias (no peter panning); steep surfaces get enough bias to stop PCF acne.
-    float slope_bias = clamp(max(fwidth(depth), max(abs(dFdx(depth)), abs(dFdy(depth)))), 0.0, 0.002);
-    depth -= slope_bias * (1.0 + shadow_blur * 0.5);
+//     float slope_bias = clamp(max(fwidth(depth), max(abs(dFdx(depth)), abs(dFdy(depth)))), 0.0, 0.002);
+//     depth -= slope_bias * (1.0 + shadow_blur * 0.5);
 
 #ifdef SHADOW_USE_DITHERING
 	float dither_val = get_shadow_dither(gl_FragCoord.xy, shadow_dither_mode, shadow_temporal_offset);
@@ -1837,8 +1867,12 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	} else {
 		omni_attenuation = 0.0;
 	}
+
+	if (omni_attenuation <= 0.0001) return;
+
 	vec3 light_attenuation = vec3(omni_attenuation);
 
+    float shadow = 1.0;
 #if !defined(SHADOWS_DISABLED)
 #ifdef USE_SHADOW //ubershader-runtime
 
@@ -1867,7 +1901,7 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		splane.z = shadow_len * omni_lights[idx].light_pos_inv_radius.w;
 
 		splane.xy = clamp_rect.xy + splane.xy * clamp_rect.zw;
-		float shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, clamp_rect, omni_lights[idx].shadow_extra_params.x, omni_lights[idx].shadow_extra_params.z, omni_lights[idx].shadow_extra_params.w);
+		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, clamp_rect, omni_lights[idx].shadow_extra_params.x, omni_lights[idx].shadow_extra_params.z, omni_lights[idx].shadow_extra_params.w);
 
 		// Bypass shadow darkening in cube corners outside the dual-paraboloid mapping range.
 		shadow = mix(shadow, 1.0, smoothstep(0.98, 1.0, splane.z) * omni_lights[idx].shadow_extra_params.y);
@@ -1883,6 +1917,9 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	}
 #endif //USE_SHADOW //ubershader-runtime
 #endif //SHADOWS_DISABLED
+    current_shadow_attenuation = vec3(shadow);
+    current_distance_attenuation = vec3(omni_attenuation);
+    
 	light_compute(normal, normalize(light_rel_vec), eye_vec, binormal, tangent, omni_lights[idx].light_color_energy.rgb, light_attenuation, albedo, transmission, omni_lights[idx].light_params.z * p_blob_intensity, roughness, metallic, specular, rim * omni_attenuation, rim_tint, clearcoat, clearcoat_gloss, anisotropy, diffuse_light, specular_light, alpha);
 }
 
@@ -1910,6 +1947,8 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		spot_attenuation = 0.0;
 	}
 
+	if (spot_attenuation <= 0.0001) return;
+
 	// Spot cone / angular attenuation (L8 superellipse)
 	vec3 spot_dir = vec3(0.0, 0.0, -1.0);
 	float spot_cutoff = spot_lights[idx].light_params.y;
@@ -1928,6 +1967,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	spot_attenuation *= 1.0 - pow(spot_rim, spot_lights[idx].light_params.x);
 	vec3 light_attenuation = vec3(spot_attenuation);
 
+    float shadow = 1.0;
 
 #if !defined(SHADOWS_DISABLED)
 #ifdef USE_SHADOW //ubershader-runtime
@@ -1940,7 +1980,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		highp vec4 splane = (spot_lights[idx].shadow_matrix * vec4(spot_shadow_vertex, 1.0));
 		splane.xyz /= splane.w;
 
-		float shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, spot_lights[idx].light_clamp, spot_lights[idx].shadow_extra_params.x, spot_lights[idx].shadow_extra_params.z, spot_lights[idx].shadow_extra_params.w);
+		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, spot_lights[idx].light_clamp, spot_lights[idx].shadow_extra_params.x, spot_lights[idx].shadow_extra_params.z, spot_lights[idx].shadow_extra_params.w);
 
 #ifdef USE_CONTACT_SHADOWS //ubershader-runtime
 		if (shadow > 0.01 && spot_lights[idx].shadow_color_contact.a > 0.0) {
@@ -1952,6 +1992,9 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	}
 #endif //USE_SHADOW //ubershader-runtime
 #endif //SHADOWS_DISABLED
+
+    current_shadow_attenuation = vec3(shadow);
+    current_distance_attenuation = vec3(spot_attenuation);
 
 	light_compute(normal, normalize(light_rel_vec), eye_vec, binormal, tangent, spot_lights[idx].light_color_energy.rgb, light_attenuation, albedo, transmission, spot_lights[idx].light_params.z * p_blob_intensity, roughness, metallic, specular, rim * spot_attenuation, rim_tint, clearcoat, clearcoat_gloss, anisotropy, diffuse_light, specular_light, alpha);
 }
@@ -2186,20 +2229,20 @@ uniform highp float gi_probe_bias1;
 uniform highp float gi_probe_normal_bias1;
 uniform bool gi_probe_blend_ambient1;
 
-#if !defined(UBERSHADER_COMPAT)
-uniform mediump sampler3D gi_probe2; //texunit:-11
-#else
-uniform mediump sampler3D gi_probe2_uber; //texunit:-13
-#define gi_probe2 gi_probe2_uber
-#endif
-uniform highp mat4 gi_probe_xform2;
-uniform highp vec3 gi_probe_bounds2;
-uniform highp vec3 gi_probe_cell_size2;
-uniform highp float gi_probe_multiplier2;
-uniform highp float gi_probe_bias2;
-uniform highp float gi_probe_normal_bias2;
-uniform bool gi_probe2_enabled;
-uniform bool gi_probe_blend_ambient2;
+// #if !defined(UBERSHADER_COMPAT)
+// uniform mediump sampler3D gi_probe2; //texunit:-11
+// #else
+// uniform mediump sampler3D gi_probe2_uber; //texunit:-13
+// #define gi_probe2 gi_probe2_uber
+// #endif
+// uniform highp mat4 gi_probe_xform2;
+// uniform highp vec3 gi_probe_bounds2;
+// uniform highp vec3 gi_probe_cell_size2;
+// uniform highp float gi_probe_multiplier2;
+// uniform highp float gi_probe_bias2;
+// uniform highp float gi_probe_normal_bias2;
+// uniform bool gi_probe2_enabled;
+// uniform bool gi_probe_blend_ambient2;
 
 vec3 voxel_cone_trace(mediump sampler3D probe, vec3 cell_size, vec3 pos, vec3 ambient, bool blend_ambient, vec3 direction, float tan_half_angle, float max_distance, float p_bias) {
 	float dist = p_bias; //1.0; //dot(direction,mix(vec3(-1.0),vec3(1.0),greaterThan(direction,vec3(0.0))))*2.0;
@@ -2320,9 +2363,9 @@ void gi_probes_compute(vec3 pos, vec3 normal, float roughness, inout vec3 out_sp
 
 	gi_probe_compute(gi_probe1, gi_probe_xform1, gi_probe_bounds1, gi_probe_cell_size1, pos, ambient, environment, gi_probe_blend_ambient1, gi_probe_multiplier1, normal_mat, ref_vec, roughness, gi_probe_bias1, gi_probe_normal_bias1, spec_accum, diff_accum);
 
-	if (gi_probe2_enabled) {
-		gi_probe_compute(gi_probe2, gi_probe_xform2, gi_probe_bounds2, gi_probe_cell_size2, pos, ambient, environment, gi_probe_blend_ambient2, gi_probe_multiplier2, normal_mat, ref_vec, roughness, gi_probe_bias2, gi_probe_normal_bias2, spec_accum, diff_accum);
-	}
+// 	if (gi_probe2_enabled) {
+// 		gi_probe_compute(gi_probe2, gi_probe_xform2, gi_probe_bounds2, gi_probe_cell_size2, pos, ambient, environment, gi_probe_blend_ambient2, gi_probe_multiplier2, normal_mat, ref_vec, roughness, gi_probe_bias2, gi_probe_normal_bias2, spec_accum, diff_accum);
+// 	}
 
 	if (diff_accum.a > 0.0) {
 		diff_accum.rgb /= diff_accum.a;
@@ -2651,6 +2694,7 @@ FRAGMENT_SHADER_CODE
 #ifdef USE_LIGHT_DIRECTIONAL //ubershader-runtime
 
 	vec3 light_attenuation = vec3(1.0);
+	float shadow = 1.0;
 
 	float depth_z = -vertex.z;
 #ifdef LIGHT_DIRECTIONAL_SHADOW //ubershader-runtime
@@ -2800,12 +2844,12 @@ FRAGMENT_SHADER_CODE
 		//one one sample
 
 
-        float shadow = sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord.xy, pssm_coord.z, light_clamp, shadow_blur, shadow_dither_mode, shadow_temporal_offset);
+        shadow = sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord.xy, pssm_coord.z, light_clamp, shadow_blur, shadow_dither_mode, shadow_temporal_offset);
 
         // Smoothly blends the shadow away at grazing angles (N.L < 0.1).
         // Since diffuse is already near 0 here, it hides the faceted teeth with 0 light leaking.
-        float NdotL_term = clamp(dot(normal, -light_direction_attenuation.xyz), 0.0, 1.0);
-        shadow = mix(1.0, shadow, smoothstep(0.0, 0.08, NdotL_term));
+//         float NdotL_term = clamp(dot(normal, -light_direction_attenuation.xyz), 0.0, 1.0);
+//         shadow = mix(1.0, shadow, smoothstep(0.0, 0.08, NdotL_term));
         // -----------------------------
 
 #ifdef LIGHT_USE_PSSM_BLEND //ubershader-runtime
@@ -2832,6 +2876,8 @@ FRAGMENT_SHADER_CODE
 	diffuse_light *= mix(vec3(1.0), light_attenuation, diffuse_light_interp.a);
 	specular_light *= mix(vec3(1.0), light_attenuation, specular_light_interp.a);
 #else //ubershader-runtime
+    current_shadow_attenuation = vec3(shadow);
+    current_distance_attenuation = vec3(1.0);
 	light_compute(normal, -light_direction_attenuation.xyz, eye_vec, binormal, tangent, light_color_energy.rgb, light_attenuation, albedo, transmission, light_params.z * specular_blob_intensity, roughness, metallic, specular, rim, rim_tint, clearcoat, clearcoat_gloss, anisotropy, diffuse_light, specular_light, alpha);
 #endif //ubershader-runtime
 
@@ -2972,7 +3018,16 @@ FRAGMENT_SHADER_CODE
 #endif
 
 	custom_buffer = custom_pass_data;
-	
+	material_id_buffer = material_id;
+
+
+	vec2 oct_normal = encode_normal_oct(normal);
+	float scene_shadows = current_shadow_attenuation.r;
+	float total_light_luminance = dot(diffuse_light + specular_light, vec3(0.333333));
+
+	// R: Shadow, G: Light, B: Packed Normal, A: Material ID
+	sln_buffer = vec4(scene_shadows, total_light_luminance, pack_normal_2d(oct_normal), material_id);
+
 #else //USE_MULTIPLE_RENDER_TARGETS //ubershader-runtime
 
 #ifdef SHADELESS //ubershader-runtime

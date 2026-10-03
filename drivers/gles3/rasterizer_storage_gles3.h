@@ -1344,7 +1344,9 @@ public:
 			GLuint normal_rough;
 			GLuint sss;
 			GLuint custom;
-			
+			GLuint material_id;
+			GLuint sln;
+
 			GLuint effect_fbo;
 			GLuint effect;
 
@@ -1353,6 +1355,8 @@ public:
 			RID normal_texture;
 			RID sss_texture;
 			RID custom_texture;
+			RID material_id_texture;
+			RID sln_texture;
 		} buffers;
 
 		struct Effects {

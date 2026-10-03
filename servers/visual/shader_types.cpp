@@ -126,6 +126,8 @@ ShaderTypes::ShaderTypes() {
 	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["VIEW_MONO_LEFT"] = constt(ShaderLanguage::TYPE_INT);
 	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["VIEW_RIGHT"] = constt(ShaderLanguage::TYPE_INT);
 	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["CUSTOM_PASS_DATA"] = ShaderLanguage::TYPE_VEC4;
+	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["SLN_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
+	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["MATERIAL_ID"] = ShaderLanguage::TYPE_FLOAT;
 	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["CUSTOM_TEXTURE"] = ShaderLanguage::TYPE_SAMPLER2D;
 	shader_modes[VS::SHADER_SPATIAL].functions["fragment"].built_ins["OUTPUT_IS_SRGB"] = constt(ShaderLanguage::TYPE_BOOL);
 
@@ -165,6 +167,8 @@ ShaderTypes::ShaderTypes() {
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SPECULAR_LIGHT"] = ShaderLanguage::TYPE_VEC3;
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["OUTPUT_IS_SRGB"] = constt(ShaderLanguage::TYPE_BOOL);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["CUSTOM_PASS_DATA"] = ShaderLanguage::TYPE_VEC4;
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SHADOWS"] = ShaderLanguage::TYPE_VEC3;
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_ATTENUATION"] = ShaderLanguage::TYPE_VEC3;
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["ALPHA"] = ShaderLanguage::TYPE_FLOAT;
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].can_discard = true;
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].main_function = true;

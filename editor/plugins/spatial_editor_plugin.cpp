@@ -2713,6 +2713,7 @@ void SpatialEditorViewport::_project_settings_changed() {
 
 		bool hdr = ProjectSettings::get_singleton()->get("rendering/quality/depth/hdr");
 		viewport->set_hdr(hdr);
+		viewport->set_expose_gbuffer(true);
 
 		const bool use_32_bpc_depth = ProjectSettings::get_singleton()->get("rendering/quality/depth/use_32_bpc_depth");
 		viewport->set_use_32_bpc_depth(use_32_bpc_depth);

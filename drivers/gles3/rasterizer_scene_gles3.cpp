@@ -2309,7 +2309,7 @@ void RasterizerSceneGLES3::_render_list(RenderList::Element **p_elements, int p_
 	state.scene_shader.set_conditional(SceneShaderGLES3::SHADELESS, false);
 	state.scene_shader.set_conditional(SceneShaderGLES3::SHADOW_MODE_PCF_LOW, false);
 	state.scene_shader.set_conditional(SceneShaderGLES3::SHADOW_MODE_PCF_HIGH, false);
-	state.scene_shader.set_conditional(SceneShaderGLES3::SHADOW_USE_DITHERING, false);	
+	state.scene_shader.set_conditional(SceneShaderGLES3::SHADOW_USE_DITHERING, false);
 	state.scene_shader.set_conditional(SceneShaderGLES3::USE_GI_PROBES, false);
 	state.scene_shader.set_conditional(SceneShaderGLES3::USE_LIGHTMAP, false);
 	state.scene_shader.set_conditional(SceneShaderGLES3::USE_LIGHTMAP_LAYERED, false);
@@ -3245,7 +3245,7 @@ void RasterizerSceneGLES3::_fill_render_list(InstanceBase **p_cull_result, int p
 	state.used_screen_texture = false;
 	state.used_depth_texture = false;
 	state.used_custom_pass = false; // <--- ADD THIS
-	
+
 	//fill list
 
 	for (int i = 0; i < p_cull_count; i++) {
@@ -4398,7 +4398,7 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		glBindFramebuffer(GL_FRAMEBUFFER, current_fbo);
 
 	} else {
-		use_mrt = env && (state.used_sss || env->ssao_enabled || env->ssr_enabled || env->dof_blur_far_enabled || env->dof_blur_near_enabled); 
+		use_mrt = env && (state.used_sss || env->ssao_enabled || env->ssr_enabled || env->dof_blur_far_enabled || env->dof_blur_near_enabled);
 		use_mrt = use_mrt || storage->frame.current_rt->expose_gbuffer;
 		use_mrt = use_mrt || state.used_custom_pass; // <--- FORCE MRT PIPELINE IF THE CUSTOM PASS IS DETECTED!
 
@@ -4425,7 +4425,9 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 			} else {
 				draw_buffers.push_back(GL_NONE); // Keeps array index synced
 			}
-			draw_buffers.push_back(GL_COLOR_ATTACHMENT4); // <--- WE ADDED THIS
+			draw_buffers.push_back(GL_COLOR_ATTACHMENT4);
+			draw_buffers.push_back(GL_COLOR_ATTACHMENT5);
+			draw_buffers.push_back(GL_COLOR_ATTACHMENT6);
 			glDrawBuffers(draw_buffers.size(), draw_buffers.ptr());
 
 			Color black(0, 0, 0, 0);
@@ -4434,7 +4436,9 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 			if (state.used_sss) {
 				glClearBufferfv(GL_COLOR, 3, black.components); // normal metal rough
 			}
-			glClearBufferfv(GL_COLOR, 4, black.components); // <--- WE ADDED THIS
+			glClearBufferfv(GL_COLOR, 4, black.components);
+			glClearBufferfv(GL_COLOR, 5, black.components);
+			glClearBufferfv(GL_COLOR, 6, black.components);
 
 		} else {
 			if (storage->frame.current_rt->buffers.active) {
@@ -4714,9 +4718,17 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		glDrawBuffers(1, &gldb);
 
 		glReadBuffer(GL_COLOR_ATTACHMENT4);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_owner->getornull(rt->buffers.custom_texture)->tex_id, 0); 
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_owner->getornull(rt->buffers.custom_texture)->tex_id, 0);
 		glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-		
+
+		glReadBuffer(GL_COLOR_ATTACHMENT5);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_owner->getornull(rt->buffers.material_id_texture)->tex_id, 0);
+		glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+		glReadBuffer(GL_COLOR_ATTACHMENT6);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_owner->getornull(rt->buffers.sln_texture)->tex_id, 0);
+		glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt->color, 0);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
 		glBindFramebuffer(GL_FRAMEBUFFER, rt->buffers.fbo);
@@ -4766,12 +4778,20 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 	}
 
 	if (storage->frame.current_rt && storage->frame.current_rt->buffers.active && storage->frame.current_rt->buffers.custom_texture.is_valid()) {
-		
-		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 12);
+
+		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
 		RasterizerStorageGLES3::Texture *custom_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.custom_texture);
 		if (custom_tex) {
 			glBindTexture(GL_TEXTURE_2D, custom_tex->tex_id);
 		}
+
+		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 12);
+		RasterizerStorageGLES3::Texture *sln_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.sln_texture);
+		if (sln_tex) glBindTexture(GL_TEXTURE_2D, sln_tex->tex_id);
+
+		// WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 13);
+		// RasterizerStorageGLES3::Texture *matid_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.material_id_texture);
+		// if (matid_tex) glBindTexture(GL_TEXTURE_2D, matid_tex->tex_id);
 	}
 
 	glEnable(GL_BLEND);
@@ -4846,18 +4866,18 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 // 	if (use_mrt) {
 // 		RID_Owner<RasterizerStorageGLES3::Texture> *texture_owner = &(storage->texture_owner);
 // 		RasterizerStorageGLES3::RenderTarget *rt = storage->frame.current_rt;
-// 
+//
 // 		glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
 // 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->fbo);
 // 		glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->buffers.fbo);
-// 
+//
 // 		GLenum gldb = GL_COLOR_ATTACHMENT0;
 // 		glDrawBuffers(1, &gldb);
-// 
+//
 // 		glReadBuffer(GL_COLOR_ATTACHMENT4);
-// 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt->color, 0); 
+// 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt->color, 0);
 // 		glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-// 
+//
 // 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rt->color, 0);
 // 		glReadBuffer(GL_COLOR_ATTACHMENT0);
 // 		glBindFramebuffer(GL_FRAMEBUFFER, rt->buffers.fbo);
