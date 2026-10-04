@@ -35,7 +35,7 @@ jobs:
 
   windows-build:
     name: 🏁 Windows
-    needs: linux-build
+    needs: generate-glue
     uses: ./.github/workflows/windows_builds.yml
 
   release:
