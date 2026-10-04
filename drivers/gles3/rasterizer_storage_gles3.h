@@ -1430,6 +1430,7 @@ public:
 		VS::ViewportMSAA msaa;
 		bool use_fxaa;
 		bool use_debanding;
+		VS::ViewportRenderMode render_mode;
 		float sharpen_intensity;
 		bool expose_gbuffer;
 
@@ -1446,6 +1447,7 @@ public:
 				msaa(VS::VIEWPORT_MSAA_DISABLED),
 				use_fxaa(false),
 				use_debanding(false),
+				render_mode(VS::VIEWPORT_RENDER_MODE_COMBINED),
 				sharpen_intensity(0.0),
 				expose_gbuffer(false) {
 			exposure.fbo = 0;
@@ -1476,6 +1478,7 @@ public:
 	virtual bool render_target_was_used(RID p_render_target);
 	virtual void render_target_clear_used(RID p_render_target);
 	virtual void render_target_set_msaa(RID p_render_target, VS::ViewportMSAA p_msaa);
+	virtual void render_target_set_render_mode(RID p_render_target, VS::ViewportRenderMode p_render_mode);
 	virtual void render_target_set_use_fxaa(RID p_render_target, bool p_fxaa);
 	virtual void render_target_set_use_debanding(RID p_render_target, bool p_debanding);
 	virtual void render_target_set_sharpen_intensity(RID p_render_target, float p_intensity);

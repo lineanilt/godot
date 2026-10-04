@@ -145,7 +145,7 @@ void ViewportTexture::set_buffer_mode(BufferMode p_buffer_mode) {
 
 	switch (buffer_mode) {
 		case BUFFER_COLOR:
-			buffer_rid = vp->color_texture_rid;
+			buffer_rid = (vp->get_render_mode() == Viewport::RENDER_MODE_DEPTH_TEXTURE_ONLY) ? vp->depth_texture_rid : vp->color_texture_rid;
 			break;
 		case BUFFER_DEPTH:
 			buffer_rid = vp->depth_texture_rid;
@@ -3147,6 +3147,23 @@ Viewport::MSAA Viewport::get_msaa() const {
 	return msaa;
 }
 
+
+void Viewport::set_render_mode(RenderMode p_mode) {
+	if (render_mode == p_mode) {
+		return;
+	}
+	render_mode = p_mode;
+	VS::get_singleton()->viewport_set_render_mode(viewport, VS::ViewportRenderMode(p_mode));
+
+	for (Set<ViewportTexture *>::Element *E = viewport_textures.front(); E; E = E->next()) {
+		E->get()->set_buffer_mode(E->get()->get_buffer_mode());
+	}
+}
+
+Viewport::RenderMode Viewport::get_render_mode() const {
+	return render_mode;
+}
+
 void Viewport::set_use_fxaa(bool p_fxaa) {
     if (p_fxaa == use_fxaa) {
         return;
@@ -3481,6 +3498,10 @@ void Viewport::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_use_debanding", "enable"), &Viewport::set_use_debanding);
 	ClassDB::bind_method(D_METHOD("get_use_debanding"), &Viewport::get_use_debanding);
 
+
+	ClassDB::bind_method(D_METHOD("set_render_mode", "mode"), &Viewport::set_render_mode);
+	ClassDB::bind_method(D_METHOD("get_render_mode"), &Viewport::get_render_mode);
+
 	ClassDB::bind_method(D_METHOD("set_sharpen_intensity", "intensity"), &Viewport::set_sharpen_intensity);
 	ClassDB::bind_method(D_METHOD("get_sharpen_intensity"), &Viewport::get_sharpen_intensity);
 	ClassDB::bind_method(D_METHOD("set_expose_gbuffer", "mrt"), &Viewport::set_expose_gbuffer);
@@ -3586,8 +3607,9 @@ void Viewport::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "handle_input_locally"), "set_handle_input_locally", "is_handling_input_locally");
 	ADD_GROUP("Rendering", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa", PROPERTY_HINT_ENUM, "Disabled,2x,4x,8x,16x,AndroidVR 2x,AndroidVR 4x"), "set_msaa", "get_msaa");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fxaa"), "set_use_fxaa", "get_use_fxaa");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debanding"), "set_use_debanding", "get_use_debanding");
+
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "render_mode", PROPERTY_HINT_ENUM, "Combined,Depth Texture Only"), "set_render_mode", "get_render_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fxaa"), "set_use_fxaa", "get_use_fxaa");	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debanding"), "set_use_debanding", "get_use_debanding");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "sharpen_intensity", PROPERTY_HINT_RANGE, "0,1"), "set_sharpen_intensity", "get_sharpen_intensity");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "expose_gbuffer"), "set_expose_gbuffer", "is_expose_gbuffer");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "hdr"), "set_hdr", "get_hdr");
@@ -3621,6 +3643,10 @@ void Viewport::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("size_changed"));
 	ADD_SIGNAL(MethodInfo("gui_focus_changed", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_RESOURCE_TYPE, "Control")));
+
+
+	BIND_ENUM_CONSTANT(RENDER_MODE_COMBINED);
+	BIND_ENUM_CONSTANT(RENDER_MODE_DEPTH_TEXTURE_ONLY);
 
 	BIND_ENUM_CONSTANT(UPDATE_DISABLED);
 	BIND_ENUM_CONSTANT(UPDATE_ONCE);
@@ -3764,6 +3790,7 @@ Viewport::Viewport() {
 	use_32_bpc_depth = false;
 
 	usage = USAGE_3D;
+	render_mode = RENDER_MODE_COMBINED;
 	debug_draw = DEBUG_DRAW_DISABLED;
 	clear_mode = CLEAR_MODE_ALWAYS;
 

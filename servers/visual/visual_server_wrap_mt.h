@@ -401,6 +401,8 @@ public:
 	FUNC2(viewport_set_render_direct_to_screen, RID, bool)
 	FUNC1(viewport_detach, RID)
 
+
+	FUNC2(viewport_set_render_mode, RID, ViewportRenderMode)
 	FUNC2(viewport_set_update_mode, RID, ViewportUpdateMode)
 	FUNC2(viewport_set_vflip, RID, bool)
 

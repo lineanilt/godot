@@ -7676,10 +7676,19 @@ void RasterizerStorageGLES3::render_target_set_size(RID p_render_target, int p_w
 	rt->height = p_height;
 	_render_target_allocate(rt);
 }
+void RasterizerStorageGLES3::render_target_set_render_mode(RID p_render_target, VS::ViewportRenderMode p_render_mode) {
+	RenderTarget *rt = render_target_owner.getornull(p_render_target);
+	ERR_FAIL_COND(!rt);
+	rt->render_mode = p_render_mode;
+}
 
 RID RasterizerStorageGLES3::render_target_get_texture(RID p_render_target, VS::ViewportTextureBuffer p_buffer) const {
 	RenderTarget *rt = render_target_owner.getornull(p_render_target);
 	ERR_FAIL_COND_V(!rt, RID());
+
+	if (rt->render_mode == VS::VIEWPORT_RENDER_MODE_DEPTH_TEXTURE_ONLY && p_buffer == VS::VIEWPORT_TEXTURE_BUFFER_COLOR) {
+		p_buffer = VS::VIEWPORT_TEXTURE_BUFFER_DEPTH;
+	}
 
 	switch (p_buffer) {
 		case VS::VIEWPORT_TEXTURE_BUFFER_COLOR:

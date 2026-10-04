@@ -516,9 +516,22 @@ void VisualServerViewport::viewport_set_vflip(RID p_viewport, bool p_enable) {
 	VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_VFLIP, p_enable);
 }
 
+
+void VisualServerViewport::viewport_set_render_mode(RID p_viewport, VS::ViewportRenderMode p_render_mode) {
+	Viewport *viewport = viewport_owner.getornull(p_viewport);
+	ERR_FAIL_COND(!viewport);
+
+	viewport->render_mode = p_render_mode;
+	VSG::storage->render_target_set_render_mode(viewport->render_target, p_render_mode);
+}
+
 RID VisualServerViewport::viewport_get_texture(RID p_viewport, VS::ViewportTextureBuffer p_buffer) const {
 	const Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND_V(!viewport, RID());
+
+	if (viewport->render_mode == VS::VIEWPORT_RENDER_MODE_DEPTH_TEXTURE_ONLY && p_buffer == VS::VIEWPORT_TEXTURE_BUFFER_COLOR) {
+		p_buffer = VS::VIEWPORT_TEXTURE_BUFFER_DEPTH;
+	}
 
 	return VSG::storage->render_target_get_texture(viewport->render_target, p_buffer);
 }
@@ -654,7 +667,7 @@ void VisualServerViewport::viewport_set_msaa(RID p_viewport, VS::ViewportMSAA p_
 void VisualServerViewport::viewport_set_use_fxaa(RID p_viewport, bool p_fxaa) {
 	Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND(!viewport);
-	
+
 	VSG::storage->render_target_set_use_fxaa(viewport->render_target, p_fxaa);
 }
 

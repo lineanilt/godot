@@ -125,6 +125,12 @@ public:
 		SHADOW_ATLAS_QUADRANT_SUBDIV_MAX,
 	};
 
+	enum RenderMode {
+		RENDER_MODE_COMBINED,
+		RENDER_MODE_DEPTH_TEXTURE_ONLY,
+	};
+
+
 	enum MSAA {
 		MSAA_DISABLED,
 		MSAA_2X,
@@ -304,6 +310,7 @@ private:
 	bool shadow_atlas_16_bits;
 	ShadowAtlasQuadrantSubdiv shadow_atlas_quadrant_subdiv[4];
 
+	RenderMode render_mode;
 	MSAA msaa;
 	bool use_fxaa;
 	bool use_debanding;
@@ -540,6 +547,8 @@ public:
 	void set_shadow_atlas_quadrant_subdiv(int p_quadrant, ShadowAtlasQuadrantSubdiv p_subdiv);
 	ShadowAtlasQuadrantSubdiv get_shadow_atlas_quadrant_subdiv(int p_quadrant) const;
 
+	void set_render_mode(RenderMode p_mode);
+	RenderMode get_render_mode() const;
 	void set_msaa(MSAA p_msaa);
 	MSAA get_msaa() const;
 
@@ -551,7 +560,7 @@ public:
 
 	void set_sharpen_intensity(float p_intensity);
 	float get_sharpen_intensity() const;
-	
+
 	void set_expose_gbuffer(bool p_force_mrt);
 	bool is_expose_gbuffer() const;
 
@@ -637,6 +646,7 @@ public:
 
 VARIANT_ENUM_CAST(ViewportTexture::BufferMode);
 
+VARIANT_ENUM_CAST(Viewport::RenderMode);
 VARIANT_ENUM_CAST(Viewport::UpdateMode);
 VARIANT_ENUM_CAST(Viewport::ShadowAtlasQuadrantSubdiv);
 VARIANT_ENUM_CAST(Viewport::MSAA);

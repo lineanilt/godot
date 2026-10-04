@@ -66,6 +66,7 @@ public:
 		bool disable_3d_by_usage;
 		bool keep_3d_linear;
 
+		VS::ViewportRenderMode render_mode;
 		RID shadow_atlas;
 		int shadow_atlas_size;
 		bool shadow_atlas_16_bits;
@@ -112,6 +113,7 @@ public:
 			update_mode = VS::VIEWPORT_UPDATE_WHEN_VISIBLE;
 			clear_mode = VS::VIEWPORT_CLEAR_ALWAYS;
 			transparent_bg = false;
+			render_mode = VS::VIEWPORT_RENDER_MODE_COMBINED;
 			disable_environment = false;
 			viewport_to_screen = 0;
 			shadow_atlas_size = 0;
@@ -161,6 +163,7 @@ public:
 
 	void viewport_set_active(RID p_viewport, bool p_active);
 	void viewport_set_parent_viewport(RID p_viewport, RID p_parent_viewport);
+	void viewport_set_render_mode(RID p_viewport, VS::ViewportRenderMode p_render_mode);
 	void viewport_set_update_mode(RID p_viewport, VS::ViewportUpdateMode p_mode);
 	void viewport_set_vflip(RID p_viewport, bool p_enable);
 

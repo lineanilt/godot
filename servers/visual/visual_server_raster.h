@@ -489,6 +489,7 @@ public:
 	BIND2(viewport_set_render_direct_to_screen, RID, bool)
 	BIND1(viewport_detach, RID)
 
+	BIND2(viewport_set_render_mode, RID, ViewportRenderMode)
 	BIND2(viewport_set_update_mode, RID, ViewportUpdateMode)
 	BIND2(viewport_set_vflip, RID, bool)
 

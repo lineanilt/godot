@@ -4291,6 +4291,51 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 
 	_setup_environment(env, p_cam_projection, p_cam_transform, p_eye, p_reflection_probe.is_valid());
 
+	/* DEPTH TEXTURE ONLY FAST PATH (Parity with render_shadow) */
+	if (storage->frame.current_rt && storage->frame.current_rt->render_mode == VS::VIEWPORT_RENDER_MODE_DEPTH_TEXTURE_ONLY) {
+		RasterizerStorageGLES3::RenderTarget *rt = storage->frame.current_rt;
+
+		glDisable(GL_BLEND);
+		glDisable(GL_DITHER);
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(GL_TRUE);
+		glDepthFunc(GL_LEQUAL);
+		glDisable(GL_SCISSOR_TEST);
+
+		// 1. Render DIRECTLY into rt->fbo (which owns the depth texture).
+		// Never render to buffers.fbo to avoid the 64MB glBlitFramebuffer copy.
+		glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+		glDrawBuffers(0, nullptr);
+
+		glViewport(0, 0, rt->width, rt->height);
+
+		glColorMask(0, 0, 0, 0);
+		glClearDepth(1.0f);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		render_list.clear();
+		_fill_render_list(p_cull_result, p_cull_count, true, false);
+
+		// 2. Front-to-back depth sorting (identical to shadowmaps).
+		// Enables peak hardware Hi-Z occlusion culling.
+		render_list.sort_by_depth(false);
+
+		state.scene_shader.set_conditional(SceneShaderGLES3::RENDER_DEPTH, true);
+		_render_list(render_list.elements, render_list.element_count, p_cam_transform, p_cam_projection, nullptr, false, false, true, false, false);
+		state.scene_shader.set_conditional(SceneShaderGLES3::RENDER_DEPTH, false);
+
+		glColorMask(1, 1, 1, 1);
+
+		// Restore default draw buffer for canvas/GUI passes
+		GLenum db = GL_COLOR_ATTACHMENT0;
+		glDrawBuffers(1, &db);
+
+		// Texture was rendered directly; mark as ready so no further blits occur
+		state.prepared_depth_texture = true;
+
+		return;
+	}
+
 	bool fb_cleared = false;
 
 	glDepthFunc(GL_LEQUAL);

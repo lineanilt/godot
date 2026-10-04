@@ -681,6 +681,13 @@ public:
 	virtual void viewport_set_update_mode(RID p_viewport, ViewportUpdateMode p_mode) = 0;
 	virtual void viewport_set_vflip(RID p_viewport, bool p_enable) = 0;
 
+	enum ViewportRenderMode {
+		VIEWPORT_RENDER_MODE_COMBINED,
+		VIEWPORT_RENDER_MODE_DEPTH_TEXTURE_ONLY,
+	};
+
+	virtual void viewport_set_render_mode(RID p_viewport, ViewportRenderMode p_render_mode) = 0;
+
 	enum ViewportClearMode {
 
 		VIEWPORT_CLEAR_ALWAYS,
@@ -1294,6 +1301,7 @@ VARIANT_ENUM_CAST(VisualServer::LightType);
 VARIANT_ENUM_CAST(VisualServer::LightParam);
 VARIANT_ENUM_CAST(VisualServer::LightBlobShadowParam);
 VARIANT_ENUM_CAST(VisualServer::ViewportUpdateMode);
+VARIANT_ENUM_CAST(VisualServer::ViewportRenderMode);
 VARIANT_ENUM_CAST(VisualServer::ViewportTextureBuffer);
 VARIANT_ENUM_CAST(VisualServer::ViewportClearMode);
 VARIANT_ENUM_CAST(VisualServer::ViewportMSAA);

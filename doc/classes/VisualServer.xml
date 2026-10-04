@@ -3228,8 +3228,15 @@
 				Currently unimplemented in Godot 3.x.
 			</description>
 		</method>
-		<method name="viewport_set_msaa">
+		<method name="viewport_set_render_mode">
 			<return type="void" />
+			<argument index="0" name="viewport" type="RID" />
+			<argument index="1" name="render_mode" type="int" enum="VisualServer.ViewportRenderMode" />
+			<description>
+				Sets the render mode for the given viewport.
+			</description>
+		</method>
+		<method name="viewport_set_msaa">			<return type="void" />
 			<argument index="0" name="viewport" type="RID" />
 			<argument index="1" name="msaa" type="int" enum="VisualServer.ViewportMSAA" />
 			<description>
@@ -3702,6 +3709,12 @@
 		</constant>
 		<constant name="VIEWPORT_UPDATE_ONCE" value="1" enum="ViewportUpdateMode">
 			Update the viewport once then set to disabled.
+		</constant>
+		<constant name="VIEWPORT_RENDER_MODE_COMBINED" value="0" enum="ViewportRenderMode">
+			Combined render mode.
+		</constant>
+		<constant name="VIEWPORT_RENDER_MODE_DEPTH_TEXTURE_ONLY" value="1" enum="ViewportRenderMode">
+			Depth texture only render mode.
 		</constant>
 		<constant name="VIEWPORT_UPDATE_WHEN_VISIBLE" value="2" enum="ViewportUpdateMode">
 			Update the viewport whenever it is visible.
