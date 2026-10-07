@@ -456,8 +456,23 @@ public:
 		LIGHT_PARAM_SHADOW_FADE_START,
 		LIGHT_PARAM_SHADOW_BLUR,
 		LIGHT_PARAM_SQUARE_SHAPE,
+		LIGHT_PARAM_PROJECTOR_PRESET,
 		LIGHT_PARAM_MAX
 	};
+
+	virtual void light_set_projector_color(RID p_light, const Color &p_color) = 0;
+	virtual void light_set_projector_uv_scale(RID p_light, const Vector2 &p_scale) = 0;
+	virtual void light_set_projector_uv_offset(RID p_light, const Vector2 &p_offset) = 0;
+	virtual void light_set_projector_rotation(RID p_light, float p_rotation) = 0;
+	virtual void light_set_projector_lod(RID p_light, float p_lod) = 0;
+	virtual void light_set_projector_repeat(RID p_light, bool p_repeat) = 0;
+	virtual void light_set_projector_only(RID p_light, bool p_enable) = 0;
+
+	enum LightDirectionalProjectorMode {
+		LIGHT_DIRECTIONAL_PROJECTOR_REPEAT,
+		LIGHT_DIRECTIONAL_PROJECTOR_FOLLOW_VIEW,
+	};
+	virtual void light_directional_set_projector_mode(RID p_light, LightDirectionalProjectorMode p_mode) = 0;
 
 	enum LightBlobShadowParam {
 		LIGHT_BLOB_SHADOW_PARAM_RANGE_HARDNESS,
@@ -477,6 +492,7 @@ public:
 	virtual void light_set_projector(RID p_light, RID p_texture) = 0;
 	virtual void light_set_negative(RID p_light, bool p_enable) = 0;
 	virtual void light_set_cull_mask(RID p_light, uint32_t p_mask) = 0;
+	virtual void light_set_shadow_cull_mask(RID p_light, uint32_t p_mask) = 0;
 	virtual void light_set_reverse_cull_face_mode(RID p_light, bool p_enabled) = 0;
 	virtual void light_set_use_gi(RID p_light, bool p_enable) = 0;
 
@@ -1299,6 +1315,7 @@ VARIANT_ENUM_CAST(VisualServer::PrimitiveType);
 VARIANT_ENUM_CAST(VisualServer::BlendShapeMode);
 VARIANT_ENUM_CAST(VisualServer::LightType);
 VARIANT_ENUM_CAST(VisualServer::LightParam);
+VARIANT_ENUM_CAST(VisualServer::LightDirectionalProjectorMode);
 VARIANT_ENUM_CAST(VisualServer::LightBlobShadowParam);
 VARIANT_ENUM_CAST(VisualServer::ViewportUpdateMode);
 VARIANT_ENUM_CAST(VisualServer::ViewportRenderMode);

@@ -956,6 +956,7 @@ public:
 		bool reverse_cull;
 
 		uint32_t cull_mask;
+		uint32_t shadow_cull_mask;
 
 		VS::LightBakeMode bake_mode;
 		VS::LightOmniShadowMode omni_shadow_mode;
@@ -977,9 +978,19 @@ public:
 	virtual void light_set_param(RID p_light, VS::LightParam p_param, float p_value);
 	virtual void light_set_shadow(RID p_light, bool p_enabled);
 	virtual void light_set_shadow_color(RID p_light, const Color &p_color);
+	virtual void light_set_projector_color(RID p_light, const Color &p_color) {}
+	virtual void light_set_projector_uv_scale(RID p_light, const Vector2 &p_scale) {}
+	virtual void light_set_projector_uv_offset(RID p_light, const Vector2 &p_offset) {}
+	virtual void light_set_projector_rotation(RID p_light, float p_rotation) {}
+	virtual void light_set_projector_lod(RID p_light, float p_lod) {}
+	virtual void light_set_projector_repeat(RID p_light, bool p_repeat) {}
+	virtual void light_set_projector_only(RID p_light, bool p_enable) {}
+	virtual void light_directional_set_projector_mode(RID p_light, VS::LightDirectionalProjectorMode p_mode) {}
 	virtual void light_set_projector(RID p_light, RID p_texture);
 	virtual void light_set_negative(RID p_light, bool p_enable);
 	virtual void light_set_cull_mask(RID p_light, uint32_t p_mask);
+	virtual uint32_t light_get_shadow_cull_mask(RID p_light) const;
+	virtual void light_set_shadow_cull_mask(RID p_light, uint32_t p_mask);
 	virtual void light_set_reverse_cull_face_mode(RID p_light, bool p_enabled);
 	virtual void light_set_use_gi(RID p_light, bool p_enabled);
 	virtual void light_set_bake_mode(RID p_light, VS::LightBakeMode p_bake_mode);

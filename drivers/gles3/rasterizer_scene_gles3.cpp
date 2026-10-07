@@ -2384,7 +2384,12 @@ void RasterizerSceneGLES3::_add_geometry(RasterizerStorageGLES3::Geometry *p_geo
 }
 
 void RasterizerSceneGLES3::_add_geometry_with_material(RasterizerStorageGLES3::Geometry *p_geometry, InstanceBase *p_instance, RasterizerStorageGLES3::GeometryOwner *p_owner, RasterizerStorageGLES3::Material *p_material, bool p_depth_pass, bool p_shadow_pass) {
-	bool has_base_alpha = (p_material->shader->spatial.uses_alpha && !p_material->shader->spatial.uses_alpha_scissor) || p_material->shader->spatial.uses_screen_texture || p_material->shader->spatial.uses_depth_texture;
+	bool has_base_alpha = (p_material->shader->spatial.uses_alpha && !p_material->shader->spatial.uses_alpha_scissor) ||
+	                      p_material->shader->spatial.uses_screen_texture ||
+	                      p_material->shader->spatial.uses_depth_texture ||
+	                      p_material->shader->spatial.uses_custom_texture ||
+	                      p_material->shader->spatial.uses_sln_texture;
+
 	bool has_blend_alpha = p_material->shader->spatial.blend_mode != RasterizerStorageGLES3::Shader::Spatial::BLEND_MODE_MIX;
 	bool has_alpha = has_base_alpha || has_blend_alpha;
 
@@ -2402,8 +2407,15 @@ void RasterizerSceneGLES3::_add_geometry_with_material(RasterizerStorageGLES3::G
 		state.used_sss = true;
 	}
 
-	if (p_material->shader->spatial.uses_custom_pass || p_material->shader->spatial.uses_custom_texture) {
-		state.used_custom_pass = true; // <--- ADD THIS
+	if (p_material->shader->spatial.uses_custom_pass) {
+		state.used_custom_pass = true;
+	}
+	if (p_material->shader->spatial.uses_custom_texture) {
+		state.used_custom_texture = true;
+		state.used_custom_pass = true; // Still forces MRT allocation if needed
+	}
+	if (p_material->shader->spatial.uses_sln_texture) {
+		state.used_sln_texture = true;
 	}
 
 	if (p_material->shader->spatial.uses_screen_texture) {
@@ -2877,6 +2889,31 @@ void RasterizerSceneGLES3::_setup_directional_light(int p_index, const Transform
 	ubo_data.shadow_dither_mode = float(shadow_dither_mode);
 	ubo_data.shadow_temporal_offset = shadow_temporal_dither ? Math::fmod(storage->frame.count * 0.618033988749895, 1.0) : 0.0;
 
+	int dir_proj_layer = -1;
+	if (li->light_ptr->projector.is_valid()) {
+		dir_proj_layer = _get_projector_layer(li->light_ptr->projector);
+	}
+	float dir_energy = li->light_ptr->param[VS::LIGHT_PARAM_ENERGY];
+	ubo_data.dir_projector_color[0] = li->light_ptr->projector_color.r * dir_energy;
+	ubo_data.dir_projector_color[1] = li->light_ptr->projector_color.g * dir_energy;
+	ubo_data.dir_projector_color[2] = li->light_ptr->projector_color.b * dir_energy;
+	ubo_data.dir_projector_color[3] = li->light_ptr->projector_color.a;
+
+	ubo_data.dir_projector_params1[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+	ubo_data.dir_projector_params1[1] = float(dir_proj_layer);
+	ubo_data.dir_projector_params1[2] = li->light_ptr->projector_repeat ? 1.0f : 0.0f;
+	ubo_data.dir_projector_params1[3] = li->light_ptr->projector_only ? 1.0f : 0.0f;
+
+	ubo_data.dir_projector_params2[0] = li->light_ptr->projector_uv_scale.x;
+	ubo_data.dir_projector_params2[1] = li->light_ptr->projector_uv_scale.y;
+	ubo_data.dir_projector_params2[2] = li->light_ptr->projector_uv_offset.x;
+	ubo_data.dir_projector_params2[3] = li->light_ptr->projector_uv_offset.y;
+
+	ubo_data.dir_projector_params3[0] = li->light_ptr->projector_rotation;
+	ubo_data.dir_projector_params3[1] = li->light_ptr->projector_lod;
+	ubo_data.dir_projector_params3[2] = float(li->light_ptr->directional_projector_mode);
+	ubo_data.dir_projector_params3[3] = 0.0f;
+
 	glBindBuffer(GL_UNIFORM_BUFFER, state.directional_ubo);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(LightDataUBO), &ubo_data, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -2991,8 +3028,33 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.shadow_extra_params[1] = li->light_ptr->param[VS::LIGHT_PARAM_SQUARE_SHAPE];
 				ubo_data.shadow.shadow_extra_params[2] = float(shadow_dither_mode);
 				ubo_data.shadow.shadow_extra_params[3] = shadow_temporal_dither ? Math::fmod(storage->frame.count * 0.618033988749895, 1.0) : 0.0;
-                Transform omni_modelview = p_camera_inverse_transform * li->transform;
+				Transform omni_modelview = p_camera_inverse_transform * li->transform;
 				store_camera(omni_modelview.affine_inverse(), ubo_data.shadow.light_inverse_matrix);
+
+				int omni_proj_layer = -1;
+				if (li->light_ptr->projector.is_valid()) {
+					omni_proj_layer = _get_projector_layer(li->light_ptr->projector);
+				}
+
+				float omni_energy = li->light_ptr->param[VS::LIGHT_PARAM_ENERGY];
+				ubo_data.shadow.light_projector_color[0] = li->light_ptr->projector_color.r * omni_energy;
+				ubo_data.shadow.light_projector_color[1] = li->light_ptr->projector_color.g * omni_energy;
+				ubo_data.shadow.light_projector_color[2] = li->light_ptr->projector_color.b * omni_energy;
+				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
+				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+				ubo_data.shadow.light_projector_params[1] = float(omni_proj_layer);
+				ubo_data.shadow.light_projector_params[2] = 0.0f;
+				ubo_data.shadow.light_projector_params[3] = 0.0f;
+
+				ubo_data.shadow.light_projector_uv_xform[0] = li->light_ptr->projector_uv_scale.x;
+				ubo_data.shadow.light_projector_uv_xform[1] = li->light_ptr->projector_uv_scale.y;
+				ubo_data.shadow.light_projector_uv_xform[2] = li->light_ptr->projector_uv_offset.x;
+				ubo_data.shadow.light_projector_uv_xform[3] = li->light_ptr->projector_uv_offset.y;
+
+				ubo_data.shadow.light_projector_extra[0] = li->light_ptr->projector_rotation;
+				ubo_data.shadow.light_projector_extra[1] = li->light_ptr->projector_lod;
+				ubo_data.shadow.light_projector_extra[2] = li->light_ptr->projector_repeat ? 1.0f : 0.0f;
+				ubo_data.shadow.light_projector_extra[3] = li->light_ptr->projector_only ? 1.0f : 0.0f;
 
 				li->light_index = state.omni_light_count;
 				memcpy(&state.omni_array_tmp[li->light_index * state.ubo_light_size], &ubo_data, state.ubo_light_size);
@@ -3080,8 +3142,33 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.shadow_extra_params[1] = li->light_ptr->param[VS::LIGHT_PARAM_SQUARE_SHAPE];
 				ubo_data.shadow.shadow_extra_params[2] = float(shadow_dither_mode);
 				ubo_data.shadow.shadow_extra_params[3] = shadow_temporal_dither ? Math::fmod(storage->frame.count * 0.618033988749895, 1.0) : 0.0;
-                Transform spot_modelview = p_camera_inverse_transform * li->transform;
+				Transform spot_modelview = p_camera_inverse_transform * li->transform;
 				store_camera(spot_modelview.affine_inverse(), ubo_data.shadow.light_inverse_matrix);
+
+				int spot_proj_layer = -1;
+				if (li->light_ptr->projector.is_valid()) {
+					spot_proj_layer = _get_projector_layer(li->light_ptr->projector);
+				}
+
+				float spot_energy = li->light_ptr->param[VS::LIGHT_PARAM_ENERGY];
+				ubo_data.shadow.light_projector_color[0] = li->light_ptr->projector_color.r * spot_energy;
+				ubo_data.shadow.light_projector_color[1] = li->light_ptr->projector_color.g * spot_energy;
+				ubo_data.shadow.light_projector_color[2] = li->light_ptr->projector_color.b * spot_energy;
+				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
+				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+				ubo_data.shadow.light_projector_params[1] = float(spot_proj_layer);
+				ubo_data.shadow.light_projector_params[2] = 0.0f;
+				ubo_data.shadow.light_projector_params[3] = 0.0f;
+
+				ubo_data.shadow.light_projector_uv_xform[0] = li->light_ptr->projector_uv_scale.x;
+				ubo_data.shadow.light_projector_uv_xform[1] = li->light_ptr->projector_uv_scale.y;
+				ubo_data.shadow.light_projector_uv_xform[2] = li->light_ptr->projector_uv_offset.x;
+				ubo_data.shadow.light_projector_uv_xform[3] = li->light_ptr->projector_uv_offset.y;
+
+				ubo_data.shadow.light_projector_extra[0] = li->light_ptr->projector_rotation;
+				ubo_data.shadow.light_projector_extra[1] = li->light_ptr->projector_lod;
+				ubo_data.shadow.light_projector_extra[2] = li->light_ptr->projector_repeat ? 1.0f : 0.0f;
+				ubo_data.shadow.light_projector_extra[3] = li->light_ptr->projector_only ? 1.0f : 0.0f;
 
 				li->light_index = state.spot_light_count;
 				memcpy(&state.spot_array_tmp[li->light_index * state.ubo_light_size], &ubo_data, state.ubo_light_size);
@@ -3244,7 +3331,9 @@ void RasterizerSceneGLES3::_fill_render_list(InstanceBase **p_cull_result, int p
 	state.used_sss = false;
 	state.used_screen_texture = false;
 	state.used_depth_texture = false;
-	state.used_custom_pass = false; // <--- ADD THIS
+	state.used_custom_pass = false;
+	state.used_custom_texture = false;
+	state.used_sln_texture = false;
 
 	//fill list
 
@@ -4336,6 +4425,12 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		return;
 	}
 
+	_init_projector_array();
+	if (projector_array) {
+		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, projector_array);
+	}
+
 	bool fb_cleared = false;
 
 	glDepthFunc(GL_LEQUAL);
@@ -4822,21 +4917,22 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		glBindTexture(GL_TEXTURE_2D, storage->frame.current_rt->effects.mip_maps[0].color);
 	}
 
-	if (storage->frame.current_rt && storage->frame.current_rt->buffers.active && storage->frame.current_rt->buffers.custom_texture.is_valid()) {
-
-		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
-		RasterizerStorageGLES3::Texture *custom_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.custom_texture);
-		if (custom_tex) {
-			glBindTexture(GL_TEXTURE_2D, custom_tex->tex_id);
+	if (storage->frame.current_rt && storage->frame.current_rt->buffers.active) {
+		if (state.used_custom_texture && storage->frame.current_rt->buffers.custom_texture.is_valid()) {
+			WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 12);
+			RasterizerStorageGLES3::Texture *custom_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.custom_texture);
+			if (custom_tex) {
+				glBindTexture(GL_TEXTURE_2D, custom_tex->tex_id);
+			}
 		}
 
-		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 12);
-		RasterizerStorageGLES3::Texture *sln_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.sln_texture);
-		if (sln_tex) glBindTexture(GL_TEXTURE_2D, sln_tex->tex_id);
-
-		// WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 13);
-		// RasterizerStorageGLES3::Texture *matid_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.material_id_texture);
-		// if (matid_tex) glBindTexture(GL_TEXTURE_2D, matid_tex->tex_id);
+		if (state.used_sln_texture && storage->frame.current_rt->buffers.sln_texture.is_valid()) {
+			WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 13);
+			RasterizerStorageGLES3::Texture *sln_tex = storage->texture_owner.getornull(storage->frame.current_rt->buffers.sln_texture);
+			if (sln_tex) {
+				glBindTexture(GL_TEXTURE_2D, sln_tex->tex_id);
+			}
+		}
 	}
 
 	glEnable(GL_BLEND);
@@ -5461,7 +5557,7 @@ void RasterizerSceneGLES3::initialize() {
 		// Not really necessary but provides a small guard against excessive sizes.
 		max_ubo_size = MIN(max_ubo_size, 1024 * 1024);
 
-		const int ubo_light_size = 240;
+		const int ubo_light_size = 272;
 		state.ubo_light_size = ubo_light_size;
 		state.max_ubo_lights = MIN(render_list.max_lights, max_ubo_size / ubo_light_size);
 
@@ -5643,6 +5739,232 @@ void RasterizerSceneGLES3::initialize() {
 	}
 }
 
+
+void RasterizerSceneGLES3::_init_projector_array() {
+	if (projector_array != 0) {
+		return;
+	}
+
+	glGenTextures(1, &projector_array);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, projector_array);
+
+	GLint min_filter = GL_LINEAR;
+	GLint mag_filter = GL_LINEAR;
+
+	switch (projector_filter_mode) {
+		case 0: // Nearest
+			min_filter = GL_NEAREST;
+			mag_filter = GL_NEAREST;
+			break;
+		case 1: // Bilinear
+			min_filter = GL_LINEAR;
+			mag_filter = GL_LINEAR;
+			break;
+		case 2: // Mipmapped Bilinear
+			min_filter = GL_LINEAR_MIPMAP_NEAREST;
+			mag_filter = GL_LINEAR;
+			break;
+		case 3: // Trilinear
+			min_filter = GL_LINEAR_MIPMAP_LINEAR;
+			mag_filter = GL_LINEAR;
+			break;
+	}
+
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, projector_base_size, projector_base_size, max_projector_lights, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	if (projector_filter_mode >= 2) {
+		glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+	}
+
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, min_filter);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, mag_filter);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+	glGenFramebuffers(1, &projector_draw_fbo);
+	glGenFramebuffers(1, &projector_read_fbo);
+
+	for (int i = 0; i < max_projector_lights; i++) {
+		projector_slots[i].texture = RID();
+		projector_slots[i].last_frame = 0;
+		projector_slots[i].version = 0;
+	}
+}
+
+void RasterizerSceneGLES3::_update_projector_layer(int p_slot, RasterizerStorageGLES3::Texture *p_tex, RID p_texture) {
+	if (!p_tex || p_tex->width <= 0 || p_tex->height <= 0) {
+		return;
+	}
+
+	// =========================================================================
+	// FAST PATH: GPU-to-GPU Direct Blit (ViewportTexture / Uncompressed Textures)
+	// Zero CPU readback, zero pipeline stalls.
+	// =========================================================================
+	if (p_tex->active && p_tex->tex_id != 0 && !p_tex->compressed) {
+		GLint prev_read_fbo = 0;
+		GLint prev_draw_fbo = 0;
+		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
+		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw_fbo);
+
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, projector_draw_fbo);
+		glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, projector_array, 0, p_slot);
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, projector_read_fbo);
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, p_tex->tex_id, 0);
+
+		if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
+				glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+
+			GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+			if (scissor_was_enabled) {
+				glDisable(GL_SCISSOR_TEST);
+			}
+
+			glReadBuffer(GL_COLOR_ATTACHMENT0);
+			GLenum draw_buf = GL_COLOR_ATTACHMENT0;
+			glDrawBuffers(1, &draw_buf);
+
+			// Viewport orientation: Godot Viewports render upside down unless VFLIP is enabled
+			int dst_y0 = 0;
+			int dst_y1 = projector_base_size;
+			if (p_tex->render_target) {
+				if (!p_tex->render_target->flags[RasterizerStorage::RENDER_TARGET_VFLIP]) {
+					dst_y0 = projector_base_size;
+					dst_y1 = 0;
+				}
+			} else {
+				// Regular images: match standard UV coordinates
+				dst_y0 = projector_base_size;
+				dst_y1 = 0;
+			}
+
+			GLenum blit_filter = (projector_resize_filter == 0) ? GL_NEAREST : GL_LINEAR;
+			glBlitFramebuffer(0, 0, p_tex->width, p_tex->height, 0, dst_y0, projector_base_size, dst_y1, GL_COLOR_BUFFER_BIT, blit_filter);
+
+			if (scissor_was_enabled) {
+				glEnable(GL_SCISSOR_TEST);
+			}
+
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
+
+			if (projector_filter_mode >= 2) {
+				glBindTexture(GL_TEXTURE_2D_ARRAY, projector_array);
+				glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+			}
+			return;
+		}
+
+		// If FBO attachment was not supported for this specific format, restore and fall through
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
+	}
+
+	// =========================================================================
+	// FALLBACK: CPU Texture Readback (Compressed disk formats like VRAM ETC2/BPTC)
+	// =========================================================================
+	Ref<Image> img = storage->texture_get_data(p_texture);
+	if (!img.is_valid() || img->empty()) {
+		return;
+	}
+
+	Ref<Image> copy = img->duplicate();
+	if (copy->is_compressed()) {
+		copy->decompress();
+	}
+	if (copy->get_format() != Image::FORMAT_RGBA8) {
+		copy->convert(Image::FORMAT_RGBA8);
+	}
+	if (copy->get_width() != projector_base_size || copy->get_height() != projector_base_size) {
+		Image::Interpolation interp = Image::Interpolation(CLAMP(projector_resize_filter, 0, 4));
+		copy->resize(projector_base_size, projector_base_size, interp);
+	}
+	copy->flip_y();
+
+	PoolVector<uint8_t>::Read r = copy->get_data().read();
+	WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, projector_array);
+	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, p_slot, projector_base_size, projector_base_size, 1, GL_RGBA, GL_UNSIGNED_BYTE, r.ptr());
+	if (projector_filter_mode >= 2) {
+		glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+	}
+}
+
+int RasterizerSceneGLES3::_get_projector_layer(RID p_texture) {
+	if (!p_texture.is_valid()) {
+		return -1;
+	}
+
+	RasterizerStorageGLES3::Texture *tex = storage->texture_owner.getornull(p_texture);
+	if (!tex) {
+		return -1;
+	}
+
+	// Automatically unwrap ViewportTexture proxies down to the RenderTarget texture
+	tex = tex->get_ptr();
+
+	_init_projector_array();
+
+	bool is_dynamic = (tex->render_target != nullptr);
+
+	// 1. Check if this texture is already cached in a layer
+	int target_slot = -1;
+	for (int i = 0; i < max_projector_lights; i++) {
+		if (projector_slots[i].texture == p_texture) {
+			target_slot = i;
+			break;
+		}
+	}
+
+	if (target_slot != -1) {
+		if (is_dynamic) {
+			// Dynamic / ViewportTexture: Update once per frame across all lights
+			if (projector_slots[target_slot].last_frame != storage->frame.count) {
+				_update_projector_layer(target_slot, tex, p_texture);
+				projector_slots[target_slot].last_frame = storage->frame.count;
+			}
+			return target_slot;
+		} else {
+			// Static texture: Update immediately if modified in editor / via code
+			if (projector_slots[target_slot].version != tex->version) {
+				_update_projector_layer(target_slot, tex, p_texture);
+				projector_slots[target_slot].version = tex->version;
+			}
+			projector_slots[target_slot].last_frame = storage->frame.count;
+			return target_slot;
+		}
+	}
+
+	// 2. Find an empty slot, or an LRU slot that hasn't been claimed yet THIS frame
+	uint64_t oldest_frame = storage->frame.count; // Must strictly be older than current frame
+	for (int i = 0; i < max_projector_lights; i++) {
+		if (!projector_slots[i].texture.is_valid() || !storage->texture_owner.owns(projector_slots[i].texture)) {
+			target_slot = i;
+			break;
+		}
+		// Protect slots in active use this frame from being overwritten
+		if (projector_slots[i].last_frame < oldest_frame) {
+			oldest_frame = projector_slots[i].last_frame;
+			target_slot = i;
+		}
+	}
+
+	// 3. If all slots are in active use by other visible lights this frame, gracefully abort
+	if (target_slot == -1) {
+		WARN_PRINT_ONCE(vformat("Exceeded light texture projector limit (%d). Projector textures may switch abruptly and be buggy in general.", max_projector_lights));
+		return -1;
+	}
+
+	// 4. Upload and cache
+	_update_projector_layer(target_slot, tex, p_texture);
+
+	projector_slots[target_slot].texture = p_texture;
+	projector_slots[target_slot].last_frame = storage->frame.count;
+	projector_slots[target_slot].version = tex->version;
+
+	return target_slot;
+}
+
 void RasterizerSceneGLES3::iteration() {
 	shadow_filter_mode = ShadowFilterMode(GLOBAL_GET_CACHED(int32_t, "rendering/quality/shadows/filter_mode"));
 	if (ProjectSettings::get_singleton()->has_setting("rendering/quality/shadows/dither_mode")) {
@@ -5650,6 +5972,36 @@ void RasterizerSceneGLES3::iteration() {
 	}
 	if (ProjectSettings::get_singleton()->has_setting("rendering/quality/shadows/temporal_dither")) {
 		shadow_temporal_dither = bool(GLOBAL_GET("rendering/quality/shadows/temporal_dither"));
+	}
+
+	int new_max_projector_lights = GLOBAL_GET("rendering/quality/light_projectors/max_projector_lights");
+	int new_projector_base_size = GLOBAL_GET("rendering/quality/light_projectors/base_size");
+	int new_projector_filter_mode = GLOBAL_GET("rendering/quality/light_projectors/filter_mode");
+	int new_projector_resize_filter = GLOBAL_GET("rendering/quality/light_projectors/resize_filter");
+
+	if (new_projector_resize_filter != projector_resize_filter) {
+		projector_resize_filter = new_projector_resize_filter;
+		// Invalidate versions so cached slots re-upload with the new interpolation algorithm
+		for (int i = 0; i < max_projector_lights; i++) {
+			projector_slots[i].version = 0;
+		}
+	}
+
+	if (new_max_projector_lights != max_projector_lights || new_projector_base_size != projector_base_size || new_projector_filter_mode != projector_filter_mode) {
+		max_projector_lights = new_max_projector_lights;
+		projector_base_size = new_projector_base_size;
+		projector_filter_mode = new_projector_filter_mode;
+
+		_free_projector_array();
+		if (projector_slots) {
+			memdelete_arr(projector_slots);
+		}
+		projector_slots = memnew_arr(ProjectorSlot, max_projector_lights);
+		for (int i = 0; i < max_projector_lights; i++) {
+			projector_slots[i].texture = RID();
+			projector_slots[i].last_frame = 0;
+			projector_slots[i].version = 0;
+		}
 	}
 
 	const int directional_shadow_size_new = int(GLOBAL_GET("rendering/quality/directional_shadow/size"));
@@ -5673,10 +6025,46 @@ void RasterizerSceneGLES3::iteration() {
 	state.scene_shader.set_conditional(SceneShaderGLES3::VCT_QUALITY_HIGH, GLOBAL_GET_CACHED(bool, "rendering/quality/voxel_cone_tracing/high_quality"));
 }
 
+void RasterizerSceneGLES3::_free_projector_array() {
+	if (projector_array) {
+		glDeleteTextures(1, &projector_array);
+		projector_array = 0;
+	}
+	if (projector_draw_fbo) {
+		glDeleteFramebuffers(1, &projector_draw_fbo);
+		projector_draw_fbo = 0;
+	}
+	if (projector_read_fbo) {
+		glDeleteFramebuffers(1, &projector_read_fbo);
+		projector_read_fbo = 0;
+	}
+}
+
 void RasterizerSceneGLES3::finalize() {
+	_free_projector_array();
+	if (projector_slots) {
+		memdelete_arr(projector_slots);
+		projector_slots = nullptr;
+	}
 }
 
 RasterizerSceneGLES3::RasterizerSceneGLES3() {
+	projector_array = 0;
+	projector_draw_fbo = 0;
+	projector_read_fbo = 0;
+
+	max_projector_lights = GLOBAL_GET("rendering/quality/light_projectors/max_projector_lights");
+	projector_base_size = GLOBAL_GET("rendering/quality/light_projectors/base_size");
+	projector_filter_mode = GLOBAL_GET("rendering/quality/light_projectors/filter_mode");
+	projector_resize_filter = GLOBAL_GET("rendering/quality/light_projectors/resize_filter");
+
+	projector_slots = memnew_arr(ProjectorSlot, max_projector_lights);
+	for (int i = 0; i < max_projector_lights; i++) {
+		projector_slots[i].texture = RID();
+		projector_slots[i].last_frame = 0;
+		projector_slots[i].version = 0;
+	}
+
 	directional_shadow_size = int(GLOBAL_GET("rendering/quality/directional_shadow/size"));
 
 	directional_shadow_16_bits = bool(GLOBAL_GET("rendering/quality/directional_shadow/16_bits"));

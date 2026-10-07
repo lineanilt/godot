@@ -18,11 +18,21 @@
 				Returns the value of the specified [enum Light.BlobShadowParam] parameter.
 			</description>
 		</method>
+		<method name="get_color_2" qualifiers="const">
+			<return type="Color" />
+			<description>
+			</description>
+		</method>
 		<method name="get_param" qualifiers="const">
 			<return type="float" />
 			<argument index="0" name="param" type="int" enum="Light.Param" />
 			<description>
 				Returns the value of the specified [enum Light.Param] parameter.
+			</description>
+		</method>
+		<method name="get_projector_preset" qualifiers="const">
+			<return type="int" />
+			<description>
 			</description>
 		</method>
 		<method name="set_blob_shadow_param">
@@ -33,12 +43,24 @@
 				Sets the value of the specified [enum Light.BlobShadowParam] parameter.
 			</description>
 		</method>
+		<method name="set_color_2">
+			<return type="void" />
+			<argument index="0" name="color" type="Color" />
+			<description>
+			</description>
+		</method>
 		<method name="set_param">
 			<return type="void" />
 			<argument index="0" name="param" type="int" enum="Light.Param" />
 			<argument index="1" name="value" type="float" />
 			<description>
 				Sets the value of the specified [enum Light.Param] parameter.
+			</description>
+		</method>
+		<method name="set_projector_preset">
+			<return type="void" />
+			<argument index="0" name="preset" type="int" />
+			<description>
 			</description>
 		</method>
 	</methods>
@@ -89,8 +111,20 @@
 		<member name="light_specular" type="float" setter="set_param" getter="get_param" default="0.5">
 			The intensity of the specular blob in objects affected by the light. At [code]0[/code], the light becomes a pure diffuse light. When not baking emission, this can be used to avoid unrealistic reflections when placing lights above an emissive surface.
 		</member>
+		<member name="light_square_shape" type="bool" setter="set_square_shape" getter="is_square_shape" default="false">
+		</member>
+		<member name="projector" type="Texture" setter="set_projector" getter="get_projector">
+			Texture-based light gobo.
+		</member>
+		<member name="projector_color_2" type="Color" setter="set_projector_color_2" getter="get_projector_color_2" default="Color( 0, 0, 0, 1 )">
+		</member>
+		<member name="projector_preset" type="float" setter="set_param" getter="get_param" default="0.0">
+		</member>
 		<member name="shadow_bias" type="float" setter="set_param" getter="get_param" default="0.15">
 			Used to adjust shadow appearance. Too small a value results in self-shadowing ("shadow acne"), while too large a value causes shadows to separate from casters ("peter-panning"). Adjust as needed.
+		</member>
+		<member name="shadow_blur" type="float" setter="set_param" getter="get_param" default="1.0">
+			Set softness of the shadow. This can be used to hide low-res shadows. Use shadow dithering if your shadows has noticeable banding.
 		</member>
 		<member name="shadow_color" type="Color" setter="set_shadow_color" getter="get_shadow_color" default="Color( 0, 0, 0, 1 )">
 			The color of shadows cast by this light.
@@ -98,6 +132,9 @@
 		<member name="shadow_contact" type="float" setter="set_param" getter="get_param" default="0.0">
 			Attempts to reduce [member shadow_bias] gap by rendering screen-space contact shadows. This has a performance impact, especially at higher values.
 			[b]Note:[/b] Contact shadows can look broken, so leaving this property to [code]0.0[/code] is recommended.
+		</member>
+		<member name="shadow_cull_mask" type="int" setter="set_shadow_cull_mask" getter="get_shadow_cull_mask" default="4294967295">
+			This light casts shadows of objects on the selected mask.
 		</member>
 		<member name="shadow_enabled" type="bool" setter="set_shadow" getter="has_shadow" default="false">
 			If [code]true[/code], the light will cast shadows.
@@ -158,7 +195,13 @@
 		<constant name="PARAM_SHADOW_FADE_START" value="16" enum="Param">
 			Constant for accessing [member DirectionalLight.directional_shadow_fade_start].
 		</constant>
-		<constant name="PARAM_MAX" value="17" enum="Param">
+		<constant name="PARAM_SHADOW_BLUR" value="17" enum="Param">
+		</constant>
+		<constant name="PARAM_SQUARE_SHAPE" value="18" enum="Param">
+		</constant>
+		<constant name="PARAM_PROJECTOR_PRESET" value="19" enum="Param">
+		</constant>
+		<constant name="PARAM_MAX" value="20" enum="Param">
 			Represents the size of the [enum Param] enum.
 		</constant>
 		<constant name="BLOB_SHADOW_PARAM_RANGE_HARDNESS" value="0" enum="BlobShadowParam">

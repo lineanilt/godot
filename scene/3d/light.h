@@ -59,9 +59,19 @@ public:
 		PARAM_SHADOW_BIAS_SPLIT_SCALE = VS::LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE,
 		PARAM_SHADOW_FADE_START = VS::LIGHT_PARAM_SHADOW_FADE_START,
 		PARAM_SHADOW_BLUR = VS::LIGHT_PARAM_SHADOW_BLUR,
-        PARAM_SQUARE_SHAPE = VS::LIGHT_PARAM_SQUARE_SHAPE,
+		PARAM_SQUARE_SHAPE = VS::LIGHT_PARAM_SQUARE_SHAPE,
+		PARAM_PROJECTOR_PRESET = VS::LIGHT_PARAM_PROJECTOR_PRESET,
 		PARAM_MAX = VS::LIGHT_PARAM_MAX
 	};
+
+	Ref<Texture> projector_texture;
+	Color projector_color_2;
+	Vector2 projector_uv_scale;
+	Vector2 projector_uv_offset;
+	float projector_rotation;
+	float projector_lod;
+	bool projector_repeat;
+	bool projector_only;
 
 	enum BlobShadowParam {
 		BLOB_SHADOW_PARAM_RANGE_HARDNESS,
@@ -84,6 +94,7 @@ private:
 	bool negative = false;
 	bool reverse_cull = false;
 	uint32_t cull_mask = 0;
+	uint32_t shadow_cull_mask;
 	VS::LightType type = VisualServer::LIGHT_DIRECTIONAL;
 	bool editor_only = false;
 	void _update_visibility();
@@ -125,6 +136,33 @@ public:
 	void set_square_shape(bool p_enable);
 	bool is_square_shape() const;
 
+	void set_projector_preset(int p_preset);
+	int get_projector_preset() const;
+
+	void set_projector_color_2(const Color &p_color);
+	Color get_projector_color_2() const;
+
+	void set_projector_uv_scale(const Vector2 &p_scale);
+	Vector2 get_projector_uv_scale() const;
+
+	void set_projector_uv_offset(const Vector2 &p_offset);
+	Vector2 get_projector_uv_offset() const;
+
+	void set_projector_rotation(float p_rotation);
+	float get_projector_rotation() const;
+
+	void set_projector_lod(float p_lod);
+	float get_projector_lod() const;
+
+	void set_projector_repeat(bool p_repeat);
+	bool is_projector_repeat() const;
+
+	void set_projector_only(bool p_enable);
+	bool is_projector_only() const;
+
+	void set_projector(const Ref<Texture> &p_texture);
+	Ref<Texture> get_projector() const;
+
 	void set_shadow(bool p_enable);
 	bool has_shadow() const;
 
@@ -133,6 +171,9 @@ public:
 
 	void set_cull_mask(uint32_t p_cull_mask);
 	uint32_t get_cull_mask() const;
+
+	void set_shadow_cull_mask(uint32_t p_mask);
+	uint32_t get_shadow_cull_mask() const;
 
 	void set_color(const Color &p_color);
 	Color get_color() const;
@@ -168,6 +209,19 @@ VARIANT_ENUM_CAST(Light::BakeMode);
 
 class DirectionalLight : public Light {
 	GDCLASS(DirectionalLight, Light);
+
+public:
+	enum ProjectorMode {
+		PROJECTOR_MODE_REPEAT = VisualServer::LIGHT_DIRECTIONAL_PROJECTOR_REPEAT,
+		PROJECTOR_MODE_FOLLOW_VIEW = VisualServer::LIGHT_DIRECTIONAL_PROJECTOR_FOLLOW_VIEW,
+	};
+
+private:
+	ProjectorMode projector_mode = PROJECTOR_MODE_REPEAT;
+
+public:
+	void set_projector_mode(ProjectorMode p_mode);
+	ProjectorMode get_projector_mode() const;
 
 public:
 	enum ShadowMode {
@@ -255,5 +309,7 @@ public:
 	SpotLight() :
 			Light(VisualServer::LIGHT_SPOT) {}
 };
+
+VARIANT_ENUM_CAST(DirectionalLight::ProjectorMode);
 
 #endif // LIGHT_H

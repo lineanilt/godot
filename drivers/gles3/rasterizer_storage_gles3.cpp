@@ -562,6 +562,7 @@ RID RasterizerStorageGLES3::texture_create() {
 	glGenTextures(1, &texture->tex_id);
 	texture->active = false;
 	texture->total_data_size = 0;
+	texture->version = 0;
 
 	return texture_owner.make_rid(texture);
 }
@@ -600,6 +601,7 @@ void RasterizerStorageGLES3::texture_allocate(RID p_texture, int p_width, int p_
 
 	Texture *texture = texture_owner.get(p_texture);
 	ERR_FAIL_COND(!texture);
+	texture->version++;
 	texture->width = p_width;
 	texture->height = p_height;
 	texture->depth = p_depth_3d;
@@ -732,6 +734,8 @@ void RasterizerStorageGLES3::texture_set_data(RID p_texture, const Ref<Image> &p
 	ERR_FAIL_COND(texture->format != p_image->get_format());
 	ERR_FAIL_COND(p_image.is_null());
 	ERR_FAIL_COND(texture->type == VS::TEXTURE_TYPE_EXTERNAL);
+
+	texture->version++;
 
 	GLenum type;
 	GLenum format;
@@ -955,6 +959,8 @@ void RasterizerStorageGLES3::texture_set_data_partial(RID p_texture, const Ref<I
 	ERR_FAIL_COND(p_dst_mip < 0 || p_dst_mip >= texture->mipmaps);
 	ERR_FAIL_COND(texture->type == VS::TEXTURE_TYPE_EXTERNAL);
 
+	texture->version++;
+
 	GLenum type;
 	GLenum format;
 	GLenum internal_format;
@@ -1024,6 +1030,13 @@ void RasterizerStorageGLES3::texture_set_data_partial(RID p_texture, const Ref<I
 	} else {
 		glTexParameteri(texture->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST); // raw Filtering
 	}
+}
+
+uint32_t RasterizerStorageGLES3::texture_get_version(RID p_texture) const {
+	Texture *texture = const_cast<RID_Owner<Texture> &>(texture_owner).getornull(p_texture);
+	ERR_FAIL_COND_V(!texture, 0);
+	texture = texture->get_ptr();
+	return texture->version;
 }
 
 Ref<Image> RasterizerStorageGLES3::texture_get_data(RID p_texture, int p_layer) const {
@@ -2253,8 +2266,9 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 			p_shader->spatial.no_blob_shadows = false;
 			p_shader->spatial.uses_sss = false;
 			p_shader->spatial.uses_time = false;
-			p_shader->spatial.uses_custom_pass = false;    // <--- ADD THIS
-			p_shader->spatial.uses_custom_texture = false; // <--- ADD THIS
+			p_shader->spatial.uses_custom_pass = false;
+			p_shader->spatial.uses_custom_texture = false;
+			p_shader->spatial.uses_sln_texture = false;
 			p_shader->spatial.uses_vertex_lighting = false;
 			p_shader->spatial.uses_screen_texture = false;
 			p_shader->spatial.uses_depth_texture = false;
@@ -2295,8 +2309,9 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 			shaders.actions_scene.usage_flag_pointers["ALPHA_SCISSOR"] = &p_shader->spatial.uses_alpha_scissor;
 
 			shaders.actions_scene.usage_flag_pointers["SSS_STRENGTH"] = &p_shader->spatial.uses_sss;
-			shaders.actions_scene.usage_flag_pointers["CUSTOM_PASS_DATA"] = &p_shader->spatial.uses_custom_pass;       // <--- ADD THIS
-			shaders.actions_scene.usage_flag_pointers["CUSTOM_TEXTURE"] = &p_shader->spatial.uses_custom_texture; // <--- ADD THIS
+			shaders.actions_scene.usage_flag_pointers["CUSTOM_PASS_DATA"] = &p_shader->spatial.uses_custom_pass;
+			shaders.actions_scene.usage_flag_pointers["CUSTOM_TEXTURE"] = &p_shader->spatial.uses_custom_texture;
+			shaders.actions_scene.usage_flag_pointers["SLN_TEXTURE"] = &p_shader->spatial.uses_sln_texture;
 			shaders.actions_scene.usage_flag_pointers["DISCARD"] = &p_shader->spatial.uses_discard;
 			shaders.actions_scene.usage_flag_pointers["SCREEN_TEXTURE"] = &p_shader->spatial.uses_screen_texture;
 			shaders.actions_scene.usage_flag_pointers["DEPTH_TEXTURE"] = &p_shader->spatial.uses_depth_texture;
@@ -5459,9 +5474,18 @@ RID RasterizerStorageGLES3::light_create(VS::LightType p_type) {
 	light->param[VS::LIGHT_PARAM_SHADOW_FADE_START] = 0.8;
 
 	light->color = Color(1, 1, 1, 1);
+	light->projector_color = Color(0, 0, 0, 1);
+	light->projector_uv_scale = Vector2(1, 1);
+	light->projector_uv_offset = Vector2(0, 0);
+	light->projector_rotation = 0.0f;
+	light->projector_lod = 0.0f;
+	light->projector_repeat = false;
+	light->projector_only = false;
+	light->directional_projector_mode = VS::LIGHT_DIRECTIONAL_PROJECTOR_REPEAT;
 	light->shadow = false;
 	light->negative = false;
 	light->cull_mask = 0xFFFFFFFF;
+	light->shadow_cull_mask = 0xFFFFFFFF;
 	light->directional_shadow_mode = VS::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL;
 	light->omni_shadow_mode = VS::LIGHT_OMNI_SHADOW_DUAL_PARABOLOID;
 	light->omni_shadow_detail = VS::LIGHT_OMNI_SHADOW_DETAIL_VERTICAL;
@@ -5513,6 +5537,72 @@ void RasterizerStorageGLES3::light_set_shadow(RID p_light, bool p_enabled) {
 	light->instance_change_notify(true, false);
 }
 
+
+void RasterizerStorageGLES3::light_set_projector_color(RID p_light, const Color &p_color) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+
+	light->projector_color = p_color;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_uv_scale(RID p_light, const Vector2 &p_scale) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_uv_scale = p_scale;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_uv_offset(RID p_light, const Vector2 &p_offset) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_uv_offset = p_offset;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_rotation(RID p_light, float p_rotation) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_rotation = p_rotation;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_lod(RID p_light, float p_lod) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_lod = p_lod;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_repeat(RID p_light, bool p_repeat) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_repeat = p_repeat;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_only(RID p_light, bool p_enable) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_only = p_enable;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_directional_set_projector_mode(RID p_light, VS::LightDirectionalProjectorMode p_mode) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->directional_projector_mode = p_mode;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
 void RasterizerStorageGLES3::light_set_shadow_color(RID p_light, const Color &p_color) {
 	Light *light = light_owner.getornull(p_light);
 	ERR_FAIL_COND(!light);
@@ -5524,6 +5614,8 @@ void RasterizerStorageGLES3::light_set_projector(RID p_light, RID p_texture) {
 	ERR_FAIL_COND(!light);
 
 	light->projector = p_texture;
+	light->version++;
+	light->instance_change_notify(true, false); // <-- ADD NOTIFICATION
 }
 
 void RasterizerStorageGLES3::light_set_negative(RID p_light, bool p_enable) {
@@ -5538,6 +5630,21 @@ void RasterizerStorageGLES3::light_set_cull_mask(RID p_light, uint32_t p_mask) {
 
 	light->cull_mask = p_mask;
 
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+uint32_t RasterizerStorageGLES3::light_get_shadow_cull_mask(RID p_light) const {
+	const Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND_V(!light, 0xFFFFFFFF);
+	return light->shadow_cull_mask;
+}
+
+void RasterizerStorageGLES3::light_set_shadow_cull_mask(RID p_light, uint32_t p_mask) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+
+	light->shadow_cull_mask = p_mask;
 	light->version++;
 	light->instance_change_notify(true, false);
 }

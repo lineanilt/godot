@@ -16,15 +16,27 @@
 	<methods>
 	</methods>
 	<members>
+		<member name="buffer_mode" type="int" setter="set_buffer_mode" getter="get_buffer_mode" enum="ViewportTexture.BufferMode" default="0">
+			The kind of buffer the [ViewportTexture] will represent. Some buffers won't be available depending on the graphics driver, and whether the [Viewport]'s [member Viewport.expose_gbuffer] is enabled. Also see [enum VisualServer.ViewportTextureBuffer].
+		</member>
 		<member name="flags" type="int" setter="set_flags" getter="get_flags" overrides="Texture" default="0" />
 		<member name="resource_local_to_scene" type="bool" setter="set_local_to_scene" getter="is_local_to_scene" overrides="Resource" default="true" />
 		<member name="viewport_path" type="NodePath" setter="set_viewport_path_in_scene" getter="get_viewport_path_in_scene" default="NodePath(&quot;&quot;)">
 			The path to the [Viewport] node to display. This is relative to the scene root, not to the node which uses the texture.
 		</member>
-		<member name="buffer_mode" type="int" setter="set_buffer_mode" getter="get_buffer_mode">
-			The kind of buffer the [ViewportTexture] will represent. Some buffers won't be available depending on the graphics driver, and whether the [Viewport]'s [member Viewport.expose_gbuffer] is enabled. Also see [enum VisualServer.ViewportTextureBuffer].
-		</member>
 	</members>
 	<constants>
+		<constant name="BUFFER_COLOR" value="0" enum="BufferMode">
+		</constant>
+		<constant name="BUFFER_DEPTH" value="1" enum="BufferMode">
+		</constant>
+		<constant name="BUFFER_DIFFUSE" value="2" enum="BufferMode">
+		</constant>
+		<constant name="BUFFER_SPECULAR" value="3" enum="BufferMode">
+		</constant>
+		<constant name="BUFFER_NORMAL" value="4" enum="BufferMode">
+		</constant>
+		<constant name="BUFFER_SUBSURFACE" value="5" enum="BufferMode">
+		</constant>
 	</constants>
 </class>

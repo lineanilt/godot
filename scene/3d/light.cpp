@@ -106,6 +106,15 @@ uint32_t Light::get_cull_mask() const {
 	return cull_mask;
 }
 
+
+void Light::set_shadow_cull_mask(uint32_t p_mask) {
+	shadow_cull_mask = p_mask;
+	VS::get_singleton()->light_set_shadow_cull_mask(light, p_mask);
+}
+uint32_t Light::get_shadow_cull_mask() const {
+	return shadow_cull_mask;
+}
+
 void Light::set_color(const Color &p_color) {
 	color = p_color;
 	VS::get_singleton()->light_set_color(light, p_color);
@@ -324,9 +333,38 @@ void Light::_validate_property(PropertyInfo &property) const {
 }
 
 void Light::_bind_methods() {
-    ClassDB::bind_method(D_METHOD("set_square_shape", "enable"), &Light::set_square_shape);
+	ClassDB::bind_method(D_METHOD("set_square_shape", "enable"), &Light::set_square_shape);
 	ClassDB::bind_method(D_METHOD("is_square_shape"), &Light::is_square_shape);
-	
+
+	ClassDB::bind_method(D_METHOD("set_projector", "projector"), &Light::set_projector);
+	ClassDB::bind_method(D_METHOD("get_projector"), &Light::get_projector);
+
+	ClassDB::bind_method(D_METHOD("set_projector_preset", "preset"), &Light::set_projector_preset);
+	ClassDB::bind_method(D_METHOD("get_projector_preset"), &Light::get_projector_preset);
+
+	ClassDB::bind_method(D_METHOD("set_projector_color_2", "color"), &Light::set_projector_color_2);
+	ClassDB::bind_method(D_METHOD("get_projector_color_2"), &Light::get_projector_color_2);
+	ClassDB::bind_method(D_METHOD("set_color_2", "color"), &Light::set_projector_color_2);
+	ClassDB::bind_method(D_METHOD("get_color_2"), &Light::get_projector_color_2);
+
+	ClassDB::bind_method(D_METHOD("set_projector_uv_scale", "scale"), &Light::set_projector_uv_scale);
+	ClassDB::bind_method(D_METHOD("get_projector_uv_scale"), &Light::get_projector_uv_scale);
+
+	ClassDB::bind_method(D_METHOD("set_projector_uv_offset", "offset"), &Light::set_projector_uv_offset);
+	ClassDB::bind_method(D_METHOD("get_projector_uv_offset"), &Light::get_projector_uv_offset);
+
+	ClassDB::bind_method(D_METHOD("set_projector_rotation", "rotation"), &Light::set_projector_rotation);
+	ClassDB::bind_method(D_METHOD("get_projector_rotation"), &Light::get_projector_rotation);
+
+	ClassDB::bind_method(D_METHOD("set_projector_lod", "lod"), &Light::set_projector_lod);
+	ClassDB::bind_method(D_METHOD("get_projector_lod"), &Light::get_projector_lod);
+
+	ClassDB::bind_method(D_METHOD("set_projector_repeat", "repeat"), &Light::set_projector_repeat);
+	ClassDB::bind_method(D_METHOD("is_projector_repeat"), &Light::is_projector_repeat);
+
+	ClassDB::bind_method(D_METHOD("set_projector_only", "enable"), &Light::set_projector_only);
+	ClassDB::bind_method(D_METHOD("is_projector_only"), &Light::is_projector_only);
+
 	ClassDB::bind_method(D_METHOD("set_editor_only", "editor_only"), &Light::set_editor_only);
 	ClassDB::bind_method(D_METHOD("is_editor_only"), &Light::is_editor_only);
 
@@ -341,6 +379,9 @@ void Light::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_cull_mask", "cull_mask"), &Light::set_cull_mask);
 	ClassDB::bind_method(D_METHOD("get_cull_mask"), &Light::get_cull_mask);
+
+	ClassDB::bind_method(D_METHOD("set_shadow_cull_mask", "cull_mask"), &Light::set_shadow_cull_mask);
+	ClassDB::bind_method(D_METHOD("get_shadow_cull_mask"), &Light::get_shadow_cull_mask);
 
 	ClassDB::bind_method(D_METHOD("set_color", "color"), &Light::set_color);
 	ClassDB::bind_method(D_METHOD("get_color"), &Light::get_color);
@@ -375,11 +416,22 @@ void Light::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "light_cull_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_cull_mask", "get_cull_mask");
 	ADD_GROUP("Shadow", "shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shadow_enabled"), "set_shadow", "has_shadow");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "shadow_cull_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_shadow_cull_mask", "get_shadow_cull_mask");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "shadow_color", PROPERTY_HINT_COLOR_NO_ALPHA), "set_shadow_color", "get_shadow_color");
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "shadow_bias", PROPERTY_HINT_RANGE, "-10,10,0.001"), "set_param", "get_param", PARAM_SHADOW_BIAS);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "shadow_blur", PROPERTY_HINT_RANGE, "0,50,0.01"), "set_param", "get_param", PARAM_SHADOW_BLUR);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "shadow_contact", PROPERTY_HINT_RANGE, "0,10,0.001"), "set_param", "get_param", PARAM_CONTACT_SHADOW_SIZE);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shadow_reverse_cull_face"), "set_shadow_reverse_cull_face", "get_shadow_reverse_cull_face");
+	ADD_GROUP("Projector", "projector_");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "projector", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_projector", "get_projector");
+	ADD_PROPERTYI(PropertyInfo(Variant::INT, "projector_preset", PROPERTY_HINT_RANGE, "0,20,1"), "set_param", "get_param", PARAM_PROJECTOR_PRESET);
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "projector_color_2"), "set_projector_color_2", "get_projector_color_2");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "projector_uv_scale"), "set_projector_uv_scale", "get_projector_uv_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "projector_uv_offset"), "set_projector_uv_offset", "get_projector_uv_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "projector_rotation"), "set_projector_rotation", "get_projector_rotation");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "projector_lod", PROPERTY_HINT_RANGE, "0,10,0.1"), "set_projector_lod", "get_projector_lod");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_repeat"), "set_projector_repeat", "is_projector_repeat");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_only"), "set_projector_only", "is_projector_only");
 	ADD_GROUP("Blob Shadow", "blob_shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "blob_shadow_enabled"), "set_blob_shadow", "has_blob_shadow");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "blob_shadow_shadow_only"), "set_blob_shadow_shadow_only", "is_blob_shadow_shadow_only");
@@ -410,6 +462,7 @@ void Light::_bind_methods() {
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_FADE_START);
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_BLUR);
 	BIND_ENUM_CONSTANT(PARAM_SQUARE_SHAPE);
+	BIND_ENUM_CONSTANT(PARAM_PROJECTOR_PRESET);
 	BIND_ENUM_CONSTANT(PARAM_MAX);
 
 	BIND_ENUM_CONSTANT(BLOB_SHADOW_PARAM_RANGE_HARDNESS);
@@ -428,6 +481,78 @@ void Light::set_square_shape(bool p_enable) {
 }
 bool Light::is_square_shape() const {
 	return get_param(PARAM_SQUARE_SHAPE) > 0.5;
+}
+
+void Light::set_projector_preset(int p_preset) {
+	set_param(PARAM_PROJECTOR_PRESET, p_preset);
+}
+int Light::get_projector_preset() const {
+	return int(get_param(PARAM_PROJECTOR_PRESET));
+}
+
+void Light::set_projector_color_2(const Color &p_color) {
+	projector_color_2 = p_color;
+	VS::get_singleton()->light_set_projector_color(light, p_color);
+}
+Color Light::get_projector_color_2() const {
+	return projector_color_2;
+}
+
+void Light::set_projector_uv_scale(const Vector2 &p_scale) {
+	projector_uv_scale = p_scale;
+	VS::get_singleton()->light_set_projector_uv_scale(light, p_scale);
+}
+Vector2 Light::get_projector_uv_scale() const {
+	return projector_uv_scale;
+}
+
+void Light::set_projector_uv_offset(const Vector2 &p_offset) {
+	projector_uv_offset = p_offset;
+	VS::get_singleton()->light_set_projector_uv_offset(light, p_offset);
+}
+Vector2 Light::get_projector_uv_offset() const {
+	return projector_uv_offset;
+}
+
+void Light::set_projector_rotation(float p_rotation) {
+	projector_rotation = p_rotation;
+	VS::get_singleton()->light_set_projector_rotation(light, p_rotation);
+}
+float Light::get_projector_rotation() const {
+	return projector_rotation;
+}
+
+void Light::set_projector_lod(float p_lod) {
+	projector_lod = p_lod;
+	VS::get_singleton()->light_set_projector_lod(light, p_lod);
+}
+float Light::get_projector_lod() const {
+	return projector_lod;
+}
+
+void Light::set_projector_repeat(bool p_repeat) {
+	projector_repeat = p_repeat;
+	VS::get_singleton()->light_set_projector_repeat(light, p_repeat);
+}
+bool Light::is_projector_repeat() const {
+	return projector_repeat;
+}
+
+void Light::set_projector_only(bool p_enable) {
+	projector_only = p_enable;
+	VS::get_singleton()->light_set_projector_only(light, p_enable);
+}
+bool Light::is_projector_only() const {
+	return projector_only;
+}
+
+void Light::set_projector(const Ref<Texture> &p_texture) {
+	projector_texture = p_texture;
+	VS::get_singleton()->light_set_projector(light, p_texture.is_valid() ? p_texture->get_rid() : RID());
+}
+
+Ref<Texture> Light::get_projector() const {
+	return projector_texture;
 }
 
 Light::Light(VisualServer::LightType p_type) {
@@ -453,6 +578,8 @@ Light::Light(VisualServer::LightType p_type) {
 	set_negative(false);
 	set_cull_mask(0xFFFFFFFF);
 
+	set_shadow_cull_mask(0xFFFFFFFF);
+
 	set_param(PARAM_ENERGY, 1);
 	set_param(PARAM_INDIRECT_ENERGY, 1);
 	set_param(PARAM_SIZE, 0);
@@ -471,7 +598,16 @@ Light::Light(VisualServer::LightType p_type) {
 	set_param(PARAM_SHADOW_BIAS, 0.15);
 	set_param(PARAM_SHADOW_BLUR, 1.0);
 	set_param(PARAM_SQUARE_SHAPE, 0.0);
-	
+	set_param(PARAM_PROJECTOR_PRESET, 0.0);
+	projector_color_2 = Color(0.0, 0.0, 0.0, 1.0);
+	projector_uv_scale = Vector2(1, 1);
+	projector_uv_offset = Vector2(0, 0);
+	projector_rotation = 0.0f;
+	projector_lod = 0.0f;
+	projector_repeat = false;
+	projector_only = false;
+	VS::get_singleton()->light_set_projector_color(light, projector_color_2);
+
 	// set_disable_scale(true);
 
 	for (int n = 0; n < BLOB_SHADOW_PARAM_MAX; n++) {
@@ -546,6 +682,16 @@ void DirectionalLight::_validate_property(PropertyInfo &property) const {
 	Light::_validate_property(property);
 }
 
+
+void DirectionalLight::set_projector_mode(ProjectorMode p_mode) {
+	projector_mode = p_mode;
+	VS::get_singleton()->light_directional_set_projector_mode(light, VisualServer::LightDirectionalProjectorMode(p_mode));
+}
+
+DirectionalLight::ProjectorMode DirectionalLight::get_projector_mode() const {
+	return projector_mode;
+}
+
 void DirectionalLight::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shadow_mode", "mode"), &DirectionalLight::set_shadow_mode);
 	ClassDB::bind_method(D_METHOD("get_shadow_mode"), &DirectionalLight::get_shadow_mode);
@@ -555,6 +701,16 @@ void DirectionalLight::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_blend_splits", "enabled"), &DirectionalLight::set_blend_splits);
 	ClassDB::bind_method(D_METHOD("is_blend_splits_enabled"), &DirectionalLight::is_blend_splits_enabled);
+
+
+	ClassDB::bind_method(D_METHOD("set_projector_mode", "mode"), &DirectionalLight::set_projector_mode);
+	ClassDB::bind_method(D_METHOD("get_projector_mode"), &DirectionalLight::get_projector_mode);
+
+	ADD_GROUP("Projector", "directional_projector_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_projector_mode", PROPERTY_HINT_ENUM, "Repeat,Follow View"), "set_projector_mode", "get_projector_mode");
+	BIND_ENUM_CONSTANT(PROJECTOR_MODE_REPEAT);
+	BIND_ENUM_CONSTANT(PROJECTOR_MODE_FOLLOW_VIEW);
+
 
 	ADD_GROUP("Directional Shadow", "directional_shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_shadow_mode", PROPERTY_HINT_ENUM, "Orthogonal (Fast),PSSM 2 Splits (Average),PSSM 3 Splits (Slow),PSSM 4 Splits (Very Slow)"), "set_shadow_mode", "get_shadow_mode");

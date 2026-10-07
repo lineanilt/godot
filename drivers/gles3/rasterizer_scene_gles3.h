@@ -209,7 +209,9 @@ public:
 		bool cull_disabled;
 		bool used_sss;
 		bool used_screen_texture;
-		bool used_custom_pass; // <--- ADD THIS
+		bool used_custom_pass;
+		bool used_custom_texture;
+		bool used_sln_texture;
 		bool used_depth_prepass;
 
 		bool used_depth_texture;
@@ -273,7 +275,7 @@ public:
 	RID_Owner<ShadowAtlas> shadow_atlas_owner;
 
 	int directional_shadow_size;
-	bool directional_shadow_16_bits;	
+	bool directional_shadow_16_bits;
 	int shadow_dither_mode;
 	bool shadow_temporal_dither;
 
@@ -292,6 +294,27 @@ public:
 		bool use_16_bits = true;
 		int current_light = 0;
 	} directional_shadow;
+
+	int max_projector_lights;
+	int projector_base_size;
+	int projector_filter_mode;
+	int projector_resize_filter;
+
+	GLuint projector_array;
+	GLuint projector_draw_fbo;
+	GLuint projector_read_fbo;
+
+	struct ProjectorSlot {
+		RID texture;
+		uint64_t last_frame;
+		uint32_t version;
+	};
+	ProjectorSlot *projector_slots;
+
+	void _init_projector_array();
+	void _free_projector_array();
+	void _update_projector_layer(int p_slot, RasterizerStorageGLES3::Texture *p_tex, RID p_texture);
+	int _get_projector_layer(RID p_texture);
 
 	virtual int get_directional_light_shadow_size(RID p_light_intance);
 	virtual void set_directional_shadow_count(int p_count);
@@ -590,7 +613,7 @@ public:
 	virtual int environment_get_canvas_max_layer(RID p_env);
 
 	/* LIGHT INSTANCE */
-    
+
 	struct LightDataUBO {
 		float light_pos_inv_radius[4];
 		float light_direction_attenuation[4];
@@ -608,7 +631,11 @@ public:
 			struct {
 				float _pad_matrix1[16];
 				float shadow_extra_params[4];
-				float light_inverse_matrix[16]; // <--- MOVED HERE!
+				float light_inverse_matrix[16];
+				float light_projector_color[4];
+				float light_projector_params[4];
+				float light_projector_uv_xform[4]; // scale.x, scale.y, offset.x, offset.y
+				float light_projector_extra[4];    // rotation, lod, repeat (0/1), projector_only (0/1)
 			};
 			float matrix[4 * 16];
 		} shadow;
@@ -618,6 +645,11 @@ public:
 		float shadow_blur;
 		float shadow_dither_mode;
 		float shadow_temporal_offset;
+
+		float dir_projector_color[4];
+		float dir_projector_params1[4]; // preset, layer, repeat, projector_only
+		float dir_projector_params2[4]; // scale.xy, offset.xy
+		float dir_projector_params3[4]; // rotation, lod, mode (0=repeat, 1=follow view), unused
 	};
 
 	struct LightInstance : public RID_Data {

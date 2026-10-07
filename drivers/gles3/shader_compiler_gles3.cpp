@@ -1165,6 +1165,8 @@ ShaderCompilerGLES3::ShaderCompilerGLES3() {
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["MODULATE"] = "#define MODULATE_USED\n";
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["SCREEN_TEXTURE"] = "#define SCREEN_TEXTURE_USED\n";
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["DEPTH_TEXTURE"] = "#define DEPTH_TEXTURE_USED\n";
+	actions[VS::SHADER_SPATIAL].usage_defines["CUSTOM_TEXTURE"] = "#define CUSTOM_TEXTURE_USED\n";
+	actions[VS::SHADER_SPATIAL].usage_defines["SLN_TEXTURE"] = "#define SLN_TEXTURE_USED\n";
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["SCREEN_UV"] = "#define SCREEN_UV_USED\n";
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["SCREEN_PIXEL_SIZE"] = "@SCREEN_UV";
 	actions[VS::SHADER_CANVAS_ITEM].usage_defines["NORMAL"] = "#define NORMAL_USED\n";

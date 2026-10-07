@@ -2001,9 +2001,19 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("light_set_param", "light", "param", "value"), &VisualServer::light_set_param);
 	ClassDB::bind_method(D_METHOD("light_set_shadow", "light", "enabled"), &VisualServer::light_set_shadow);
 	ClassDB::bind_method(D_METHOD("light_set_shadow_color", "light", "color"), &VisualServer::light_set_shadow_color);
+	ClassDB::bind_method(D_METHOD("light_set_projector_color", "light", "color"), &VisualServer::light_set_projector_color);
+	ClassDB::bind_method(D_METHOD("light_set_projector_uv_scale", "light", "scale"), &VisualServer::light_set_projector_uv_scale);
+	ClassDB::bind_method(D_METHOD("light_set_projector_uv_offset", "light", "offset"), &VisualServer::light_set_projector_uv_offset);
+	ClassDB::bind_method(D_METHOD("light_set_projector_rotation", "light", "rotation"), &VisualServer::light_set_projector_rotation);
+	ClassDB::bind_method(D_METHOD("light_set_projector_lod", "light", "lod"), &VisualServer::light_set_projector_lod);
+	ClassDB::bind_method(D_METHOD("light_set_projector_repeat", "light", "repeat"), &VisualServer::light_set_projector_repeat);
+	ClassDB::bind_method(D_METHOD("light_set_projector_only", "light", "projector_only"), &VisualServer::light_set_projector_only);
+	ClassDB::bind_method(D_METHOD("light_directional_set_projector_mode", "light", "mode"), &VisualServer::light_directional_set_projector_mode);
 	ClassDB::bind_method(D_METHOD("light_set_projector", "light", "texture"), &VisualServer::light_set_projector);
 	ClassDB::bind_method(D_METHOD("light_set_negative", "light", "enable"), &VisualServer::light_set_negative);
 	ClassDB::bind_method(D_METHOD("light_set_cull_mask", "light", "mask"), &VisualServer::light_set_cull_mask);
+	ClassDB::bind_method(D_METHOD("light_set_shadow_cull_mask", "light", "mask"), &VisualServer::light_set_shadow_cull_mask);
+
 	ClassDB::bind_method(D_METHOD("light_set_reverse_cull_face_mode", "light", "enabled"), &VisualServer::light_set_reverse_cull_face_mode);
 	ClassDB::bind_method(D_METHOD("light_set_use_gi", "light", "enabled"), &VisualServer::light_set_use_gi);
 	ClassDB::bind_method(D_METHOD("light_set_bake_mode", "light", "bake_mode"), &VisualServer::light_set_bake_mode);
@@ -2417,7 +2427,11 @@ void VisualServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_FADE_START);
+	BIND_ENUM_CONSTANT(LIGHT_PARAM_PROJECTOR_PRESET);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_MAX);
+
+	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_PROJECTOR_REPEAT);
+	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_PROJECTOR_FOLLOW_VIEW);
 
 	BIND_ENUM_CONSTANT(LIGHT_BAKE_DISABLED);
 	BIND_ENUM_CONSTANT(LIGHT_BAKE_INDIRECT);
@@ -2724,6 +2738,17 @@ VisualServer::VisualServer() {
 	GLOBAL_DEF("rendering/quality/shadows/dither_mode", 0);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/dither_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/dither_mode", PROPERTY_HINT_ENUM, "IGN,Bayer Matrix (16x),R2,White Noise,Sine-based Noise"));
 	GLOBAL_DEF("rendering/quality/shadows/temporal_dither", false);
+
+	GLOBAL_DEF("rendering/quality/light_projectors/max_projector_lights", 64);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/light_projectors/max_projector_lights", PropertyInfo(Variant::INT, "rendering/quality/light_projectors/max_projector_lights", PROPERTY_HINT_RANGE, "1,512,1"));
+	GLOBAL_DEF("rendering/quality/light_projectors/base_size", 256);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/light_projectors/base_size", PropertyInfo(Variant::INT, "rendering/quality/light_projectors/base_size", PROPERTY_HINT_RANGE, "64,2048,64"));
+	GLOBAL_DEF("rendering/quality/light_projectors/filter_mode", 1);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/light_projectors/filter_mode", PropertyInfo(Variant::INT, "rendering/quality/light_projectors/filter_mode", PROPERTY_HINT_ENUM, "Nearest,Bilinear,Mipmapped Bilinear,Trilinear"));
+
+	GLOBAL_DEF("rendering/quality/light_projectors/resize_filter", 1);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/light_projectors/resize_filter", PropertyInfo(Variant::INT, "rendering/quality/light_projectors/resize_filter", PROPERTY_HINT_ENUM, "Nearest,Bilinear"));
+
 	GLOBAL_DEF("rendering/quality/reflections/texture_array_reflections", true);
 	GLOBAL_DEF("rendering/quality/reflections/texture_array_reflections.mobile", false);
 	GLOBAL_DEF("rendering/quality/reflections/high_quality_ggx", true);

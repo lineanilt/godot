@@ -2709,6 +2709,10 @@ void SpatialEditorViewport::_project_settings_changed() {
 		viewport->set_use_debanding(use_debanding);
 
 		float sharpen_intensity = ProjectSettings::get_singleton()->get("rendering/quality/filters/sharpen_intensity");
+		bool shrink = view_menu && view_menu->get_popup() && view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION));
+		if (shrink) {
+			sharpen_intensity = MAX(sharpen_intensity, 0.5f);
+		}
 		viewport->set_sharpen_intensity(sharpen_intensity);
 
 		bool hdr = ProjectSettings::get_singleton()->get("rendering/quality/depth/hdr");
@@ -2916,10 +2920,22 @@ void SpatialEditorViewport::_notification(int p_what) {
 			_project_settings_changed();
 		}
 
+
 		bool shrink = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION));
 
 		if (shrink != (viewport_container->get_stretch_shrink() > 1)) {
 			viewport_container->set_stretch_shrink(shrink ? 2 : 1);
+			if (shrink) {
+				// Bilinear filtering on the upscaled texture
+				viewport->get_texture()->set_flags(Texture::FLAG_FILTER);
+				// Contrast-Adaptive Sharpening to recover lost edge contrast
+				viewport->set_sharpen_intensity(0.5f);
+			} else {
+				// Restore native 1:1 pixel sampling
+				viewport->get_texture()->set_flags(0);
+				float default_sharpen = ProjectSettings::get_singleton()->get("rendering/quality/filters/sharpen_intensity");
+				viewport->set_sharpen_intensity(default_sharpen);
+			}
 		}
 
 		bool show_info = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_INFORMATION));

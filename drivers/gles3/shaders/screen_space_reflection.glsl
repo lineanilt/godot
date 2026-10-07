@@ -43,8 +43,6 @@ uniform float curve_fade_in;
 
 layout(location = 0) out vec4 frag_color;
 
-#define M_PI 3.14159265358979323846
-
 vec2 view_to_screen(vec3 view_pos, out float w) {
 	vec4 projected = projection * vec4(view_pos, 1.0);
 	projected.xyz /= projected.w;
@@ -53,22 +51,16 @@ vec2 view_to_screen(vec3 view_pos, out float w) {
 	return projected.xy;
 }
 
-float fetch_linear_depth(vec2 screen_pos) {
-	float d = texture(source_depth, screen_pos * pixel_size).r * 2.0 - 1.0;
-#ifdef USE_ORTHOGONAL_PROJECTION
-	d = ((d + (camera_z_far + camera_z_near) / (camera_z_far - camera_z_near)) * (camera_z_far - camera_z_near)) / 2.0;
-#else
-	d = 2.0 * camera_z_near * camera_z_far / (camera_z_far + camera_z_near - d * (camera_z_far - camera_z_near));
-#endif
-	return -d;
-}
+#define M_PI 3.14159265359
 
 void main() {
 	vec4 diffuse = texture(source_diffuse, uv_interp);
 	vec4 normal_roughness = texture(source_normal_roughness, uv_interp);
 
-	vec3 normal = normal_roughness.xyz * 2.0 - 1.0;
-	float roughness = clamp(normal_roughness.w, 0.0, 1.0);
+	vec3 normal;
+	normal = normal_roughness.xyz * 2.0 - 1.0;
+
+	float roughness = normal_roughness.w;
 
 	float depth_tex = texture(source_depth, uv_interp).r;
 
@@ -80,31 +72,32 @@ void main() {
 #else
 	vec3 view_dir = normalize(vertex);
 #endif
-
-	// Analytical specular reflection vector (no stochastic microfacet jitter)
 	vec3 ray_dir = normalize(reflect(view_dir, normal));
 
 	if (dot(ray_dir, normal) < 0.001) {
 		frag_color = vec4(0.0);
 		return;
 	}
+	//ray_dir = normalize(view_dir - normal * dot(normal,view_dir) * 2.0);
+	//ray_dir = normalize(vec3(1.0, 1.0, -1.0));
 
-	// Normal lift to avoid self-intersecting the surface on step 0
-	vec3 ray_origin = vertex + normal * max(0.03, -vertex.z * 0.005);
+	////////////////
 
-	float ray_len = (ray_origin.z + ray_dir.z * camera_z_far) > -camera_z_near ? (-camera_z_near - ray_origin.z) / ray_dir.z : camera_z_far;
-	vec3 ray_end = ray_origin + ray_dir * ray_len;
+	// make ray length and clip it against the near plane (don't want to trace beyond visible)
+	float ray_len = (vertex.z + ray_dir.z * camera_z_far) > -camera_z_near ? (-camera_z_near - vertex.z) / ray_dir.z : camera_z_far;
+	vec3 ray_end = vertex + ray_dir * ray_len;
 
 	float w_begin;
-	vec2 vp_line_begin = view_to_screen(ray_origin, w_begin);
+	vec2 vp_line_begin = view_to_screen(vertex, w_begin);
 	float w_end;
 	vec2 vp_line_end = view_to_screen(ray_end, w_end);
 	vec2 vp_line_dir = vp_line_end - vp_line_begin;
 
+	// we need to interpolate w along the ray, to generate perspective correct reflections
 	w_begin = 1.0 / w_begin;
 	w_end = 1.0 / w_end;
 
-	float z_begin = ray_origin.z * w_begin;
+	float z_begin = vertex.z * w_begin;
 	float z_end = ray_end.z * w_end;
 
 	vec2 line_begin = vp_line_begin / pixel_size;
@@ -112,7 +105,8 @@ void main() {
 	float z_dir = z_end - z_begin;
 	float w_dir = w_end - w_begin;
 
-	// Clip the line to viewport edges
+	// clip the line to the viewport edges
+
 	float scale_max_x = min(1.0, 0.99 * (1.0 - vp_line_begin.x) / max(1e-5, vp_line_dir.x));
 	float scale_max_y = min(1.0, 0.99 * (1.0 - vp_line_begin.y) / max(1e-5, vp_line_dir.y));
 	float scale_min_x = min(1.0, 0.99 * vp_line_begin.x / max(1e-5, -vp_line_dir.x));
@@ -122,39 +116,28 @@ void main() {
 	z_dir *= line_clip;
 	w_dir *= line_clip;
 
-	vec2 line_advance = normalize(line_dir);
+	// clip z and w advance to line advance
+	vec2 line_advance = normalize(line_dir); // down to pixel
 	float step_size = length(line_advance) / length(line_dir);
-	float z_advance = z_dir * step_size;
-	float w_advance = w_dir * step_size;
+	float z_advance = z_dir * step_size; // adapt z advance to line advance
+	float w_advance = w_dir * step_size; // adapt w advance to line advance
 
+	// make line advance faster if direction is closer to pixel edges (this avoids sampling the same pixel twice)
 	float advance_angle_adj = 1.0 / max(abs(line_advance.x), abs(line_advance.y));
-	line_advance *= advance_angle_adj;
+	line_advance *= advance_angle_adj; // adapt z advance to line advance
 	z_advance *= advance_angle_adj;
 	w_advance *= advance_angle_adj;
 
-	// Dynamic step scaling: ensure num_steps can reach the end of the ray
-	float total_pixels = length(line_dir);
-	float max_possible_reach = float(num_steps) * advance_angle_adj;
-	if (total_pixels > max_possible_reach) {
-		float step_stride = total_pixels / max_possible_reach;
-		line_advance *= step_stride;
-		z_advance *= step_stride;
-		w_advance *= step_stride;
-	}
-
-	// Deterministic half-step offset to center ray evaluation per cell without noise dither
-	vec2 pos = line_begin + line_advance * 0.5;
-	float z = z_begin + z_advance * 0.5;
-	float w = w_begin + w_advance * 0.5;
-
+	vec2 pos = line_begin;
+	float z = z_begin;
+	float w = w_begin;
 	float z_from = z / w;
 	float z_to = z_from;
 	float depth;
 	vec2 prev_pos = pos;
-	float prev_z = z;
-	float prev_w = w;
 
 	bool found = false;
+
 	float steps_taken = 0.0;
 
 	for (int i = 0; i < num_steps; i++) {
@@ -162,91 +145,141 @@ void main() {
 		z += z_advance;
 		w += w_advance;
 
-		depth = fetch_linear_depth(pos);
+		// convert to linear depth
+
+		depth = texture(source_depth, pos * pixel_size).r * 2.0 - 1.0;
+#ifdef USE_ORTHOGONAL_PROJECTION
+		depth = ((depth + (camera_z_far + camera_z_near) / (camera_z_far - camera_z_near)) * (camera_z_far - camera_z_near)) / 2.0;
+#else
+		depth = 2.0 * camera_z_near * camera_z_far / (camera_z_far + camera_z_near - depth * (camera_z_far - camera_z_near));
+#endif
+		depth = -depth;
+
 		z_from = z_to;
 		z_to = z / w;
 
-		// If ray passes behind depth
 		if (depth > z_to) {
-			// Binary Search Refinement (4 steps)
-			vec2 p_start = prev_pos;
-			vec2 p_end = pos;
-			float z_s = prev_z;
-			float z_e = z;
-			float w_s = prev_w;
-			float w_e = w;
-
-			for (int b = 0; b < 4; b++) {
-				vec2 p_mid = (p_start + p_end) * 0.5;
-				float z_mid = (z_s + z_e) * 0.5;
-				float w_mid = (w_s + w_e) * 0.5;
-				float d = fetch_linear_depth(p_mid);
-
-				if (d > (z_mid / w_mid)) {
-					p_end = p_mid;
-					z_e = z_mid;
-					w_e = w_mid;
-				} else {
-					p_start = p_mid;
-					z_s = z_mid;
-					w_s = w_mid;
-				}
-			}
-
-			float hit_depth = fetch_linear_depth(p_end);
-			float hit_ray_z = z_e / w_e;
-			float dynamic_tol = max(depth_tolerance, abs((z_e - z_s) / w_e) * 2.0);
-
-			// Check refined hit
-			if ((hit_depth <= hit_ray_z + dynamic_tol) && (-hit_depth < camera_z_far)) {
-				pos = p_end;
+			// if depth was surpassed
+			if ((depth <= max(z_to, z_from) + depth_tolerance) && (-depth < camera_z_far)) {
+				// check the depth tolerance and far clip
 				found = true;
-				break;
 			}
+			break;
 		}
 
 		steps_taken += 1.0;
 		prev_pos = pos;
-		prev_z = z;
-		prev_w = w;
 	}
 
 	if (found) {
-		if (any(bvec4(lessThan(pos, vec2(0.0)), greaterThan(pos, viewport_size * 0.5)))) {
+		float margin_blend = 1.0;
+
+		vec2 margin = vec2((viewport_size.x + viewport_size.y) * 0.5 * 0.05); // make a uniform margin
+		if (any(bvec4(lessThan(pos, vec2(0.0, 0.0)), greaterThan(pos, viewport_size * 0.5)))) {
+			// clip at the screen edges
 			frag_color = vec4(0.0);
 			return;
 		}
 
-		vec2 margin = vec2((viewport_size.x + viewport_size.y) * 0.5 * 0.05);
-		vec2 margin_grad = mix(viewport_size * 0.5 - pos, pos, lessThan(pos, viewport_size * 0.25));
-		float margin_blend = smoothstep(0.0, margin.x * margin.y, margin_grad.x * margin_grad.y);
+		{
+			//blend fading out towards inner margin
+			// 0.25 = midpoint of half-resolution reflection
+			vec2 margin_grad = mix(viewport_size * 0.5 - pos, pos, lessThan(pos, viewport_size * 0.25));
+			margin_blend = smoothstep(0.0, margin.x * margin.y, margin_grad.x * margin_grad.y);
+			//margin_blend = 1.0;
+		}
 
-		vec2 final_pos = pos;
+		vec2 final_pos;
 		float grad = (steps_taken + 1.0) / float(num_steps);
 		float initial_fade = curve_fade_in == 0.0 ? 1.0 : pow(clamp(grad, 0.0, 1.0), curve_fade_in);
 		float fade = pow(clamp(1.0 - grad, 0.0, 1.0), distance_fade) * initial_fade;
+		final_pos = pos;
 
 #ifdef REFLECT_ROUGHNESS
-		// Analytical screen-space cone tracing:
-		// Convert perceptual roughness to GGX alpha (alpha = roughness^2)
-		float alpha = roughness * roughness;
-		float hit_dist = length(final_pos - line_begin);
 
-		// Analytical cone footprint subtended in pixel space
-		float cone_angle = alpha * (M_PI * 0.25);
-		float cone_diameter = max(1.0, 2.0 * hit_dist * tan(cone_angle));
-		float hit_mip = clamp(log2(cone_diameter), 0.0, filter_mipmap_levels - 1.0);
+		vec4 final_color;
+		// if roughness is enabled, do screen space cone tracing
+		if (roughness > 0.001) {
+			///////////////////////////////////////////////////////////////////////////////////////
+			// use a blurred version (in consecutive mipmaps) of the screen to simulate roughness
 
-		// Analytical roughness attenuation (rough surfaces disperse specular energy to probe fallbacks)
-		float roughness_fade = clamp(1.0 - alpha, 0.0, 1.0);
+			float gloss = 1.0 - roughness;
+			float cone_angle = roughness * M_PI * 0.5;
+			vec2 cone_dir = final_pos - line_begin;
+			float cone_len = length(cone_dir);
+			cone_dir = normalize(cone_dir); // will be used normalized from now on
+			float max_mipmap = filter_mipmap_levels - 1.0;
+			float gloss_mult = gloss;
 
-		vec4 final_color = textureLod(source_diffuse, final_pos * pixel_size, hit_mip);
-		frag_color = vec4(final_color.rgb, fade * margin_blend * roughness_fade);
+			float rem_alpha = 1.0;
+			final_color = vec4(0.0);
+
+			for (int i = 0; i < 7; i++) {
+				float op_len = 2.0 * tan(cone_angle) * cone_len; // opposite side of iso triangle
+				float radius;
+				{
+					// fit to sphere inside cone (sphere ends at end of cone), something like this:
+					// ___
+					// \O/
+					//  V
+					//
+					// as it avoids bleeding from beyond the reflection as much as possible. As a plus
+					// it also makes the rough reflection more elongated.
+					float a = op_len;
+					float h = cone_len;
+					float a2 = a * a;
+					float fh2 = 4.0f * h * h;
+					radius = (a * (sqrt(a2 + fh2) - a)) / (4.0f * h);
+				}
+
+				// find the place where screen must be sampled
+				vec2 sample_pos = (line_begin + cone_dir * (cone_len - radius)) * pixel_size;
+				// radius is in pixels, so it's natural that log2(radius) maps to the right mipmap for the amount of pixels
+				float mipmap = clamp(log2(radius), 0.0, max_mipmap);
+				//mipmap = max(mipmap - 1.0, 0.0);
+
+				// do sampling
+
+				vec4 sample_color;
+				{
+					sample_color = textureLod(source_diffuse, sample_pos, mipmap);
+				}
+
+				// multiply by gloss
+				sample_color.rgb *= gloss_mult;
+				sample_color.a = gloss_mult;
+
+				rem_alpha -= sample_color.a;
+				if (rem_alpha < 0.0) {
+					sample_color.rgb *= (1.0 - abs(rem_alpha));
+				}
+
+				final_color += sample_color;
+
+				if (final_color.a >= 0.95) {
+					// This code of accumulating gloss and aborting on near one
+					// makes sense when you think of cone tracing.
+					// Think of it as if roughness was 0, then we could abort on the first
+					// iteration. For lesser roughness values, we need more iterations, but
+					// each needs to have less influence given the sphere is smaller
+					break;
+				}
+
+				cone_len -= radius * 2.0; // go to next (smaller) circle.
+
+				gloss_mult *= gloss;
+			}
+		} else {
+			final_color = textureLod(source_diffuse, final_pos * pixel_size, 0.0);
+		}
+
+		frag_color = vec4(final_color.rgb, fade * margin_blend);
+
 #else
 		frag_color = vec4(textureLod(source_diffuse, final_pos * pixel_size, 0.0).rgb, fade * margin_blend);
 #endif
 
 	} else {
-		frag_color = vec4(0.0);
+		frag_color = vec4(0.0, 0.0, 0.0, 0.0);
 	}
 }

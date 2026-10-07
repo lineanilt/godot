@@ -1727,6 +1727,13 @@
 				Not implemented in Godot 3.x.
 			</description>
 		</method>
+		<method name="light_set_projector_color">
+			<return type="void" />
+			<argument index="0" name="light" type="RID" />
+			<argument index="1" name="color" type="Color" />
+			<description>
+			</description>
+		</method>
 		<method name="light_set_reverse_cull_face_mode">
 			<return type="void" />
 			<argument index="0" name="light" type="RID" />
@@ -1749,6 +1756,13 @@
 			<argument index="1" name="color" type="Color" />
 			<description>
 				Sets the color of the shadow cast by the light. Equivalent to [member Light.shadow_color].
+			</description>
+		</method>
+		<method name="light_set_shadow_cull_mask">
+			<return type="void" />
+			<argument index="0" name="light" type="RID" />
+			<argument index="1" name="mask" type="int" />
+			<description>
 			</description>
 		</method>
 		<method name="light_set_use_gi">
@@ -3112,8 +3126,8 @@
 		<method name="viewport_get_texture" qualifiers="const">
 			<return type="RID" />
 			<argument index="0" name="viewport" type="RID" />
+			<argument index="1" name="buffer" type="int" enum="VisualServer.ViewportTextureBuffer" />
 			<description>
-				Returns the viewport's last rendered frame.
 			</description>
 		</method>
 		<method name="viewport_remove_canvas">
@@ -3185,12 +3199,9 @@
 			</description>
 		</method>
 		<method name="viewport_set_expose_gbuffer">
-			<return type="void">
-			</return>
-			<argument index="0" name="viewport" type="RID">
-			</argument>
-			<argument index="1" name="expose_gbuffer" type="bool">
-			</argument>
+			<return type="void" />
+			<argument index="0" name="viewport" type="RID" />
+			<argument index="1" name="expose_gbuffer" type="bool" />
 			<description>
 				If [code]true[/code], then the g-buffers will be accessible by any [ViewportTexture] that use this [Viewport]. (See [member Viewport.expose_gbuffer]).
 			</description>
@@ -3228,15 +3239,8 @@
 				Currently unimplemented in Godot 3.x.
 			</description>
 		</method>
-		<method name="viewport_set_render_mode">
+		<method name="viewport_set_msaa">
 			<return type="void" />
-			<argument index="0" name="viewport" type="RID" />
-			<argument index="1" name="render_mode" type="int" enum="VisualServer.ViewportRenderMode" />
-			<description>
-				Sets the render mode for the given viewport.
-			</description>
-		</method>
-		<method name="viewport_set_msaa">			<return type="void" />
 			<argument index="0" name="viewport" type="RID" />
 			<argument index="1" name="msaa" type="int" enum="VisualServer.ViewportMSAA" />
 			<description>
@@ -3257,6 +3261,14 @@
 			<argument index="1" name="enabled" type="bool" />
 			<description>
 				If [code]true[/code], render the contents of the viewport directly to screen. This allows a low-level optimization where you can skip drawing a viewport to the root viewport. While this optimization can result in a significant increase in speed (especially on older devices), it comes at a cost of usability. When this is enabled, you cannot read from the viewport or from the [code]SCREEN_TEXTURE[/code]. You also lose the benefit of certain window settings, such as the various stretch modes. Another consequence to be aware of is that in 2D the rendering happens in window coordinates, so if you have a viewport that is double the size of the window, and you set this, then only the portion that fits within the window will be drawn, no automatic scaling is possible, even if your game scene is significantly larger than the window size.
+			</description>
+		</method>
+		<method name="viewport_set_render_mode">
+			<return type="void" />
+			<argument index="0" name="viewport" type="RID" />
+			<argument index="1" name="render_mode" type="int" enum="VisualServer.ViewportRenderMode" />
+			<description>
+				Sets the render mode for the given viewport.
 			</description>
 		</method>
 		<method name="viewport_set_scenario">
@@ -3665,7 +3677,9 @@
 		<constant name="LIGHT_PARAM_SHADOW_FADE_START" value="16" enum="LightParam">
 			Proportion of [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] at which point the shadow starts to fade. At [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE], the shadow will disappear. The default value is a balance between smooth fading and distant shadow visibility. If the camera moves fast and the [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] is low, consider lowering [constant LIGHT_PARAM_SHADOW_FADE_START] below [code]0.8[/code] to make shadow transitions less noticeable. On the other hand, if you tuned [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] to cover the entire scene, you can set [constant LIGHT_PARAM_SHADOW_FADE_START] to [code]1.0[/code] to prevent the shadow from fading in the distance (it will suddenly cut off instead).
 		</constant>
-		<constant name="LIGHT_PARAM_MAX" value="17" enum="LightParam">
+		<constant name="LIGHT_PARAM_PROJECTOR_PRESET" value="19" enum="LightParam">
+		</constant>
+		<constant name="LIGHT_PARAM_MAX" value="20" enum="LightParam">
 			Represents the size of the [enum LightParam] enum.
 		</constant>
 		<constant name="LIGHT_BAKE_DISABLED" value="0" enum="LightBakeMode">
@@ -3721,6 +3735,23 @@
 		</constant>
 		<constant name="VIEWPORT_UPDATE_ALWAYS" value="3" enum="ViewportUpdateMode">
 			Always update the viewport.
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_COLOR" value="0" enum="ViewportTextureBuffer">
+			The color buffer of the [Viewport].
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_DEPTH" value="1" enum="ViewportTextureBuffer">
+			The depth buffer of the [Viewport]. It is currently not possible to read it's data.
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_DIFFUSE" value="2" enum="ViewportTextureBuffer">
+			The diffuse buffer of the [Viewport]. More specifically, it contains emission, diffuse and ambient light combined in the RGB channels, and ambient contribution in the alpha channel for SSAO. [b]GLES3 only.[/b]
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_SPECULAR" value="3" enum="ViewportTextureBuffer">
+			The specular buffer of the [Viewport]. The RGB channels contain the specular color, and the alpha channel contains the metalness. [b]GLES3 only.[/b]
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_NORMAL" value="4" enum="ViewportTextureBuffer">
+		</constant>
+		<constant name="VIEWPORT_TEXTURE_BUFFER_SUBSURFACE" value="5" enum="ViewportTextureBuffer">
+			The subsurface scattering buffer of the [Viewport]. It's used for subsurface scattering effects. [b]GLES3 only.[/b]
 		</constant>
 		<constant name="VIEWPORT_CLEAR_ALWAYS" value="0" enum="ViewportClearMode">
 			The viewport is always cleared before drawing.
@@ -3790,24 +3821,6 @@
 		</constant>
 		<constant name="VIEWPORT_RENDER_INFO_MAX" value="8" enum="ViewportRenderInfo">
 			Represents the size of the [enum ViewportRenderInfo] enum.
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_COLOR" value="0" enum="ViewportTextureBuffer">
-			The color buffer of the [Viewport].
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_DEPTH" value="1" enum="ViewportTextureBuffer">
-			The depth buffer of the [Viewport]. It is currently not possible to read it's data.
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_DIFFUSE" value="2" enum="ViewportTextureBuffer">
-			The diffuse buffer of the [Viewport]. More specifically, it contains emission, diffuse and ambient light combined in the RGB channels, and ambient contribution in the alpha channel for SSAO. [b]GLES3 only.[/b]
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_SPECULAR" value="3" enum="ViewportTextureBuffer">
-			The specular buffer of the [Viewport]. The RGB channels contain the specular color, and the alpha channel contains the metalness. [b]GLES3 only.[/b]
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_NORMAL_ROUGH" value="4" enum="ViewportTextureBuffer">
-			The normal and roughness buffer of the [Viewport]. The RGB channels contain the normals in view space, and the alpha channel contains the roughness. [b]GLES3 only.[/b]
-		</constant>
-		<constant name="VIEWPORT_TEXTURE_BUFFER_SUBSURFACE" value="5" enum="ViewportTextureBuffer">
-			The subsurface scattering buffer of the [Viewport]. It's used for subsurface scattering effects. [b]GLES3 only.[/b]
 		</constant>
 		<constant name="VIEWPORT_DEBUG_DRAW_DISABLED" value="0" enum="ViewportDebugDraw">
 			Debug draw is disabled. Default setting.
