@@ -32,6 +32,11 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
      	- ALPHA issue also applies here.  
 	- `textureGather`. Requires OpenGL 4.0 or ES 3.1.
 - Some contact shadow improvements. (self)
+- Light projectors. (self)
+	- This uses a `sampler2DArray`-based system. It has a 'Base Size' property in the project settings; every Projector texture is automatically resized to it (this doesn't affect the resource itself).
+ 	- You can set the filters (shader, resize) in the settings.
+  	- Additionally, if you don't want to use textures, there are 20 projector presets per-light that use math instead of textures.
+  	- This is also available for DirectionalLights.
 - Depth texture can be accessed in CanvasItems. Make sure you have a proper 3D viewport, though. (self)
 
 I probably missed some but still.
