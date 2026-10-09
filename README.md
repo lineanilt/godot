@@ -23,7 +23,7 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
 	- `CUSTOM_PASS_DATA` (vec4).
 	- `CUSTOM_TEXTURE` to view `CUSTOM_PASS_DATA` (sampler2D). 16-bit.
   	- `MATERIAL_ID`.
-	- `SLN_TEXTURE`. "Shadows", "Lighting", "Normal. 32-bit.
+	- `SLN_TEXTURE`. "Shadows", "Lighting", "Normal". 32-bit.
   		- R: Shadow
   	 	- G: Light
   	  	- B: Packed Normals (octahedral, view-space)
