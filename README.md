@@ -22,14 +22,12 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
 - (self) Some new shader built-ins. Namely:
 	- `CUSTOM_PASS_DATA` (vec4).
 	- `CUSTOM_TEXTURE` to view `CUSTOM_PASS_DATA` (sampler2D). 16-bit.
-		- You need to apply an ALPHA to your shader to view it due to how it's setup in rendering.
   	- `MATERIAL_ID`.
 	- `SLN_TEXTURE`. "Shadows", "Lighting", "Normal. 32-bit.
   		- R: Shadow
   	 	- G: Light
   	  	- B: Packed Normals (octahedral, view-space)
   	  	- A: Material ID
-     	- ALPHA issue also applies here.  
 	- `textureGather`. Requires OpenGL 4.0 or ES 3.1.
 - Some contact shadow improvements. (self)
 - Light projectors. (self)
@@ -161,6 +159,7 @@ void fragment() {
 - Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
 - It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
 - Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
+- Grabbing the depth, screen or new buffer textures would put your material on the alpha pipeline. This is a vanilla Godot 3 issue.
 
 Unless you're targeting _really_ old hardware that does not support GL3.3 or GL4.x (which is like... GPUs older than 2009), these aren't exactly major issues. 
 Even Ivy Bridge supports GL4.2 (with 4.6 extensions) on Linux (4.0 on Windows).
