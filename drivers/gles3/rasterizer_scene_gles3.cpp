@@ -2912,7 +2912,14 @@ void RasterizerSceneGLES3::_setup_directional_light(int p_index, const Transform
 	ubo_data.dir_projector_params3[0] = li->light_ptr->projector_rotation;
 	ubo_data.dir_projector_params3[1] = li->light_ptr->projector_lod;
 	ubo_data.dir_projector_params3[2] = float(li->light_ptr->directional_projector_mode);
-	ubo_data.dir_projector_params3[3] = 0.0f;
+	int dir_proj_flags = 0;
+	if (li->light_ptr->projector_use_as_shadow_blur_map) dir_proj_flags |= 1;
+	if (li->light_ptr->projector_disable) dir_proj_flags |= 2;
+	if (li->light_ptr->projector_invert_shadow_blur_map) dir_proj_flags |= 4;
+	ubo_data.dir_projector_params3[3] = float(dir_proj_flags);
+
+	Transform sun_modelview = p_camera_inverse_transform * li->transform;
+	store_camera(sun_modelview.affine_inverse(), ubo_data.dir_projector_matrix);
 
 	glBindBuffer(GL_UNIFORM_BUFFER, state.directional_ubo);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(LightDataUBO), &ubo_data, GL_DYNAMIC_DRAW);
@@ -3043,7 +3050,11 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
 				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
 				ubo_data.shadow.light_projector_params[1] = float(omni_proj_layer);
-				ubo_data.shadow.light_projector_params[2] = 0.0f;
+				int omni_proj_flags = 0;
+				if (li->light_ptr->projector_use_as_shadow_blur_map) omni_proj_flags |= 1;
+				if (li->light_ptr->projector_disable) omni_proj_flags |= 2;
+				if (li->light_ptr->projector_invert_shadow_blur_map) omni_proj_flags |= 4;
+				ubo_data.shadow.light_projector_params[2] = float(omni_proj_flags);
 				ubo_data.shadow.light_projector_params[3] = 0.0f;
 
 				ubo_data.shadow.light_projector_uv_xform[0] = li->light_ptr->projector_uv_scale.x;
@@ -3157,7 +3168,11 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
 				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
 				ubo_data.shadow.light_projector_params[1] = float(spot_proj_layer);
-				ubo_data.shadow.light_projector_params[2] = 0.0f;
+				int spot_proj_flags = 0;
+				if (li->light_ptr->projector_use_as_shadow_blur_map) spot_proj_flags |= 1;
+				if (li->light_ptr->projector_disable) spot_proj_flags |= 2;
+				if (li->light_ptr->projector_invert_shadow_blur_map) spot_proj_flags |= 4;
+				ubo_data.shadow.light_projector_params[2] = float(spot_proj_flags);
 				ubo_data.shadow.light_projector_params[3] = 0.0f;
 
 				ubo_data.shadow.light_projector_uv_xform[0] = li->light_ptr->projector_uv_scale.x;
@@ -5557,7 +5572,7 @@ void RasterizerSceneGLES3::initialize() {
 		// Not really necessary but provides a small guard against excessive sizes.
 		max_ubo_size = MIN(max_ubo_size, 1024 * 1024);
 
-		const int ubo_light_size = 272;
+		const int ubo_light_size = 304;
 		state.ubo_light_size = ubo_light_size;
 		state.max_ubo_lights = MIN(render_list.max_lights, max_ubo_size / ubo_light_size);
 

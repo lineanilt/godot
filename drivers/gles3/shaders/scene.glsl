@@ -153,6 +153,12 @@ layout(std140) uniform DirectionalLightData { //ubo:3
 	mediump float shadow_blur;
 	mediump float shadow_dither_mode;
 	mediump float shadow_temporal_offset;
+
+	mediump vec4 dir_projector_color;
+	mediump vec4 dir_projector_params1;
+	mediump vec4 dir_projector_params2;
+	mediump vec4 dir_projector_params3;
+	highp mat4 dir_projector_matrix;
 };
 
 #endif //ubershader-skip
@@ -172,6 +178,8 @@ struct LightData {
 	highp mat4 light_inverse_matrix;
 	mediump vec4 light_projector_color;
 	mediump vec4 light_projector_params;
+	mediump vec4 light_projector_uv_xform; // scale.xy, offset.xy
+	mediump vec4 light_projector_extra;    // rotation, lod, repeat, projector_only
 };
 
 layout(std140) uniform OmniLightData { //ubo:4
@@ -907,6 +915,7 @@ layout(std140) uniform DirectionalLightData {
 	mediump vec4 dir_projector_params1; // preset, layer, repeat, projector_only
 	mediump vec4 dir_projector_params2; // scale.xy, offset.xy
 	mediump vec4 dir_projector_params3; // rotation, lod, mode, unused
+	highp mat4 dir_projector_matrix;
 };
 
 uniform highp sampler2DShadow directional_shadow; // texunit:-5
@@ -2220,6 +2229,44 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 
 	vec3 light_attenuation = vec3(omni_attenuation);
 
+	int omni_proj = int(omni_lights[idx].light_projector_params.x + 0.5);
+	int omni_tex_layer = int(omni_lights[idx].light_projector_params.y + 0.5);
+	int omni_proj_flags = int(omni_lights[idx].light_projector_params.z + 0.5);
+	bool omni_proj_blur_map = (omni_proj_flags & 1) != 0;
+	bool omni_proj_disabled = (omni_proj_flags & 2) != 0;
+	bool omni_proj_invert_blur = (omni_proj_flags & 4) != 0;
+
+	float omni_proj_mask = 1.0;
+	vec4 omni_proj_sample = vec4(1.0);
+	bool has_omni_proj = false;
+
+	if (omni_lights[idx].light_projector_params.y >= -0.5) {
+		vec3 proj_dir = normalize(local_light_rel_vec);
+		float theta = atan(-proj_dir.x, proj_dir.z);
+		float phi = asin(clamp(-proj_dir.y, -1.0, 1.0));
+		vec2 tex_uv = vec2(theta / 6.28318530718 + 0.5, phi / 3.14159265359 + 0.5);
+		tex_uv = transform_projector_uv(tex_uv, omni_lights[idx].light_projector_uv_xform.xy, omni_lights[idx].light_projector_uv_xform.zw, omni_lights[idx].light_projector_extra.x);
+		if (omni_lights[idx].light_projector_extra.z > 0.5) {
+			tex_uv = fract(tex_uv);
+		}
+		omni_proj_sample = textureLod(projector_array, vec3(tex_uv, float(omni_tex_layer)), omni_lights[idx].light_projector_extra.y);
+		omni_proj_mask = dot(omni_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
+		has_omni_proj = true;
+	} else if (omni_proj > 0) {
+		vec3 proj_dir = normalize(local_light_rel_vec);
+		omni_proj_mask = eval_proj_omni(omni_proj, proj_dir, omni_lights[idx].light_projector_color.a);
+		has_omni_proj = true;
+	}
+
+	float omni_blur = omni_lights[idx].shadow_extra_params.x;
+	if (omni_proj_blur_map && has_omni_proj) {
+		float blur_val = omni_proj_mask;
+		if (omni_proj_invert_blur) {
+			blur_val = 1.0 - blur_val;
+		}
+		omni_blur *= blur_val;
+	}
+
     float shadow = 1.0;
 #if !defined(SHADOWS_DISABLED)
 #ifdef USE_SHADOW //ubershader-runtime
@@ -2249,7 +2296,7 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		splane.z = shadow_len * omni_lights[idx].light_pos_inv_radius.w;
 
 		splane.xy = clamp_rect.xy + splane.xy * clamp_rect.zw;
-		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, clamp_rect, omni_lights[idx].shadow_extra_params.x, omni_lights[idx].shadow_extra_params.z, omni_lights[idx].shadow_extra_params.w);
+		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, clamp_rect, omni_blur, omni_lights[idx].shadow_extra_params.z, omni_lights[idx].shadow_extra_params.w);
 
 		// Bypass shadow darkening in cube corners outside the dual-paraboloid mapping range.
 		shadow = mix(shadow, 1.0, smoothstep(0.98, 1.0, splane.z) * omni_lights[idx].shadow_extra_params.y);
@@ -2269,26 +2316,15 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
     current_distance_attenuation = vec3(omni_attenuation);
 
 	vec3 light_color = omni_lights[idx].light_color_energy.rgb;
-	int omni_proj = int(omni_lights[idx].light_projector_params.x + 0.5);
-	int omni_tex_layer = int(omni_lights[idx].light_projector_params.y + 0.5);
+	bool omni_proj_only = (!omni_proj_disabled) && (omni_lights[idx].light_projector_extra.w > 0.5);
 
-	bool omni_proj_only = omni_lights[idx].light_projector_extra.w > 0.5;
-	if (omni_lights[idx].light_projector_params.y >= -0.5) {
-		vec3 proj_dir = normalize(local_light_rel_vec);
-		float theta = atan(-proj_dir.x, proj_dir.z);
-		float phi = asin(clamp(-proj_dir.y, -1.0, 1.0));
-		vec2 tex_uv = vec2(theta / 6.28318530718 + 0.5, phi / 3.14159265359 + 0.5);
-		tex_uv = transform_projector_uv(tex_uv, omni_lights[idx].light_projector_uv_xform.xy, omni_lights[idx].light_projector_uv_xform.zw, omni_lights[idx].light_projector_extra.x);
-		if (omni_lights[idx].light_projector_extra.z > 0.5) {
-			tex_uv = fract(tex_uv);
+	if (!omni_proj_disabled && has_omni_proj) {
+		if (omni_lights[idx].light_projector_params.y >= -0.5) {
+			vec3 tinted_light = light_color * omni_proj_sample.rgb;
+			light_color = mix(omni_lights[idx].light_projector_color.rgb, tinted_light, omni_proj_sample.a);
+		} else if (omni_proj > 0) {
+			light_color = mix(omni_lights[idx].light_projector_color.rgb, light_color, omni_proj_mask);
 		}
-		vec4 proj_sample = textureLod(projector_array, vec3(tex_uv, float(omni_tex_layer)), omni_lights[idx].light_projector_extra.y);
-		vec3 tinted_light = light_color * proj_sample.rgb;
-		light_color = mix(omni_lights[idx].light_projector_color.rgb, tinted_light, proj_sample.a);
-	} else if (omni_proj > 0) {
-		vec3 proj_dir = normalize(local_light_rel_vec);
-		float m = eval_proj_omni(omni_proj, proj_dir, omni_lights[idx].light_projector_color.a);
-		light_color = mix(omni_lights[idx].light_projector_color.rgb, light_color, m);
 	}
 
 	if (omni_proj_only) {
@@ -2343,6 +2379,56 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	spot_attenuation *= 1.0 - pow(spot_rim, spot_lights[idx].light_params.x);
 	vec3 light_attenuation = vec3(spot_attenuation);
 
+	int spot_proj = int(spot_lights[idx].light_projector_params.x + 0.5);
+	int spot_tex_layer = int(spot_lights[idx].light_projector_params.y + 0.5);
+	int spot_proj_flags = int(spot_lights[idx].light_projector_params.z + 0.5);
+	bool spot_proj_blur_map = (spot_proj_flags & 1) != 0;
+	bool spot_proj_disabled = (spot_proj_flags & 2) != 0;
+	bool spot_proj_invert_blur = (spot_proj_flags & 4) != 0;
+
+	float spot_proj_mask = 1.0;
+	vec4 spot_proj_sample = vec4(1.0);
+	bool has_spot_proj = false;
+	bool spot_in_bounds = false;
+
+	if (spot_lights[idx].light_projector_params.y >= -0.5) {
+		float dist_z = local_light_rel_vec.z;
+		if (dist_z > 0.001) {
+			float spot_cutoff_v = spot_lights[idx].light_params.y;
+			float tan_angle = max(0.001, sqrt(max(0.0, 1.0 - spot_cutoff_v * spot_cutoff_v)) / max(0.001, spot_cutoff_v));
+			vec2 proj_coords = vec2(-local_light_rel_vec.x, -local_light_rel_vec.y) / (dist_z * tan_angle);
+			vec2 tex_uv = proj_coords * 0.5 + 0.5;
+			tex_uv = transform_projector_uv(tex_uv, spot_lights[idx].light_projector_uv_xform.xy, spot_lights[idx].light_projector_uv_xform.zw, spot_lights[idx].light_projector_extra.x);
+			bool repeat = spot_lights[idx].light_projector_extra.z > 0.5;
+			if (repeat) {
+				tex_uv = fract(tex_uv);
+			}
+			spot_in_bounds = repeat || (tex_uv.x >= 0.0 && tex_uv.x <= 1.0 && tex_uv.y >= 0.0 && tex_uv.y <= 1.0);
+			if (spot_in_bounds) {
+				spot_proj_sample = textureLod(projector_array, vec3(tex_uv, float(spot_tex_layer)), spot_lights[idx].light_projector_extra.y);
+				spot_proj_mask = dot(spot_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
+				has_spot_proj = true;
+			}
+		}
+	} else if (spot_proj > 0) {
+		float dist_z = max(0.001, local_light_rel_vec.z);
+		float spot_cutoff_v = spot_lights[idx].light_params.y;
+		float tan_angle = max(0.001, sqrt(max(0.0, 1.0 - spot_cutoff_v * spot_cutoff_v)) / max(0.001, spot_cutoff_v));
+		vec2 proj_uv = local_light_rel_vec.xy / (dist_z * tan_angle);
+		spot_proj_mask = eval_proj_spot(spot_proj, proj_uv, spot_lights[idx].light_projector_color.a);
+		has_spot_proj = true;
+		spot_in_bounds = true;
+	}
+
+	float spot_blur = spot_lights[idx].shadow_extra_params.x;
+	if (spot_proj_blur_map && has_spot_proj) {
+		float blur_val = spot_proj_mask;
+		if (spot_proj_invert_blur) {
+			blur_val = 1.0 - blur_val;
+		}
+		spot_blur *= blur_val;
+	}
+
     float shadow = 1.0;
 
 #if !defined(SHADOWS_DISABLED)
@@ -2356,7 +2442,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		highp vec4 splane = (spot_lights[idx].shadow_matrix * vec4(spot_shadow_vertex, 1.0));
 		splane.xyz /= splane.w;
 
-		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, spot_lights[idx].light_clamp, spot_lights[idx].shadow_extra_params.x, spot_lights[idx].shadow_extra_params.z, spot_lights[idx].shadow_extra_params.w);
+		shadow = sample_shadow(shadow_atlas, shadow_atlas_pixel_size, splane.xy, splane.z, spot_lights[idx].light_clamp, spot_blur, spot_lights[idx].shadow_extra_params.z, spot_lights[idx].shadow_extra_params.w);
 
 #ifdef USE_CONTACT_SHADOWS //ubershader-runtime
 		if (shadow > 0.01 && spot_lights[idx].shadow_color_contact.a > 0.0) {
@@ -2373,39 +2459,19 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
     current_distance_attenuation = vec3(spot_attenuation);
 
 	vec3 light_color = spot_lights[idx].light_color_energy.rgb;
-	int spot_proj = int(spot_lights[idx].light_projector_params.x + 0.5);
-	int spot_tex_layer = int(spot_lights[idx].light_projector_params.y + 0.5);
+	bool spot_proj_only = (!spot_proj_disabled) && (spot_lights[idx].light_projector_extra.w > 0.5);
 
-	bool spot_proj_only = spot_lights[idx].light_projector_extra.w > 0.5;
-	if (spot_lights[idx].light_projector_params.y >= -0.5) {
-		float dist_z = local_light_rel_vec.z;
-		if (dist_z > 0.001) {
-			float spot_cutoff = spot_lights[idx].light_params.y;
-			float tan_angle = max(0.001, sqrt(max(0.0, 1.0 - spot_cutoff * spot_cutoff)) / max(0.001, spot_cutoff));
-			vec2 proj_coords = vec2(-local_light_rel_vec.x, -local_light_rel_vec.y) / (dist_z * tan_angle);
-			vec2 tex_uv = proj_coords * 0.5 + 0.5;
-			tex_uv = transform_projector_uv(tex_uv, spot_lights[idx].light_projector_uv_xform.xy, spot_lights[idx].light_projector_uv_xform.zw, spot_lights[idx].light_projector_extra.x);
-			bool repeat = spot_lights[idx].light_projector_extra.z > 0.5;
-			if (repeat) {
-				tex_uv = fract(tex_uv);
-			}
-			if (repeat || (tex_uv.x >= 0.0 && tex_uv.x <= 1.0 && tex_uv.y >= 0.0 && tex_uv.y <= 1.0)) {
-				vec4 proj_sample = textureLod(projector_array, vec3(tex_uv, float(spot_tex_layer)), spot_lights[idx].light_projector_extra.y);
-				vec3 tinted_light = light_color * proj_sample.rgb;
-				light_color = mix(spot_lights[idx].light_projector_color.rgb, tinted_light, proj_sample.a);
+	if (!spot_proj_disabled) {
+		if (spot_lights[idx].light_projector_params.y >= -0.5) {
+			if (spot_in_bounds) {
+				vec3 tinted_light = light_color * spot_proj_sample.rgb;
+				light_color = mix(spot_lights[idx].light_projector_color.rgb, tinted_light, spot_proj_sample.a);
 			} else {
 				light_color = spot_lights[idx].light_projector_color.rgb;
 			}
-		} else {
-			light_color = spot_lights[idx].light_projector_color.rgb;
+		} else if (spot_proj > 0) {
+			light_color = mix(spot_lights[idx].light_projector_color.rgb, light_color, spot_proj_mask);
 		}
-	} else if (spot_proj > 0) {
-		float dist_z = max(0.001, local_light_rel_vec.z);
-		float spot_cutoff = spot_lights[idx].light_params.y;
-		float tan_angle = max(0.001, sqrt(max(0.0, 1.0 - spot_cutoff * spot_cutoff)) / max(0.001, spot_cutoff));
-		vec2 proj_uv = local_light_rel_vec.xy / (dist_z * tan_angle);
-		float m = eval_proj_spot(spot_proj, proj_uv, spot_lights[idx].light_projector_color.a);
-		light_color = mix(spot_lights[idx].light_projector_color.rgb, light_color, m);
 	}
 
 	if (spot_proj_only) {
@@ -3022,12 +3088,17 @@ FRAGMENT_SHADER_CODE
 
 #endif //ubershader-runtime
 
+	// Defined outside the lightmap block to make the ubershader approach work.
+	vec4 lightmap_sample = vec4(1.0);
+
 #ifdef USE_LIGHTMAP //ubershader-runtime
+	// Also store the alpha channel as it's used for shadowmasking further below.
 #ifdef USE_LIGHTMAP_LAYERED //ubershader-runtime
-	ambient_light = LIGHTMAP_TEXTURE_LAYERED_SAMPLE(lightmap_array, vec3(uv2, float(lightmap_layer))).rgb * lightmap_energy;
+	lightmap_sample = LIGHTMAP_TEXTURE_LAYERED_SAMPLE(lightmap_array, vec3(uv2, float(lightmap_layer)));
 #else //ubershader-runtime
-	ambient_light = LIGHTMAP_TEXTURE_SAMPLE(lightmap, uv2).rgb * lightmap_energy;
+	lightmap_sample = LIGHTMAP_TEXTURE_SAMPLE(lightmap, uv2);
 #endif //ubershader-runtime
+	ambient_light = lightmap_sample.rgb * lightmap_energy;
 #endif //ubershader-runtime
 
 #ifdef USE_LIGHTMAP_CAPTURE //ubershader-runtime
@@ -3110,8 +3181,58 @@ FRAGMENT_SHADER_CODE
 
 #ifdef USE_LIGHT_DIRECTIONAL //ubershader-runtime
 
+	// No lightmaps, fallback to no shadows in the distance.
 	vec3 light_attenuation = vec3(1.0);
 	float shadow = 1.0;
+
+	int dir_proj_flags = int(dir_projector_params3.w + 0.5);
+	bool dir_proj_blur_map = (dir_proj_flags & 1) != 0;
+	bool dir_proj_disabled = (dir_proj_flags & 2) != 0;
+	bool dir_proj_invert_blur = (dir_proj_flags & 4) != 0;
+
+	bool has_dir_proj = dir_projector_params1.y >= 0.0;
+	vec4 dir_proj_sample = vec4(1.0);
+	float dir_proj_mask = 1.0;
+	bool dir_in_bounds = false;
+
+	if (has_dir_proj) {
+		int dir_tex_layer = int(dir_projector_params1.y + 0.5);
+		vec2 dir_uv;
+		if (dir_projector_params3.z > 0.5) {
+			// Follow View: camera screen UV
+			dir_uv = (position_interp.xy / position_interp.w) * 0.5 + 0.5;
+		} else {
+			// Sun Orthographic Projection:
+			// Project down the sunlight's rays aligned with the sun node's orientation
+			vec4 sun_local_pos = dir_projector_matrix * vec4(vertex, 1.0);
+			dir_uv = sun_local_pos.xy;
+		}
+		dir_uv = transform_projector_uv(dir_uv, dir_projector_params2.xy, dir_projector_params2.zw, dir_projector_params3.x);
+		if (dir_projector_params1.z > 0.5) {
+			dir_uv = fract(dir_uv);
+		}
+		dir_in_bounds = dir_projector_params1.z > 0.5 || (dir_uv.x >= 0.0 && dir_uv.x <= 1.0 && dir_uv.y >= 0.0 && dir_uv.y <= 1.0);
+		if (dir_in_bounds) {
+			dir_proj_sample = textureLod(projector_array, vec3(dir_uv, float(dir_tex_layer)), dir_projector_params3.y);
+			dir_proj_mask = dot(dir_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
+		}
+	}
+
+	float dir_blur = shadow_blur;
+	if (dir_proj_blur_map && has_dir_proj) {
+		float blur_val = dir_in_bounds ? dir_proj_mask : 0.0;
+		if (dir_proj_invert_blur) {
+			blur_val = 1.0 - blur_val;
+		}
+		dir_blur *= blur_val;
+	}
+
+#ifdef USE_LIGHTMAP //ubershader-runtime
+	// Take the DirectionalLight's shadow color into account for the shadowmask.
+	// This applies even if the DirectionalLight shadow is disabled, which can be
+	// done to improve performance by disabling shadows for dynamic objects only.
+	light_attenuation = mix(shadow_color_contact.rgb, vec3(1.0), lightmap_sample.a);
+#endif //ubershader-runtime
 
 	float depth_z = -vertex.z;
 #ifdef LIGHT_DIRECTIONAL_SHADOW //ubershader-runtime
@@ -3261,7 +3382,7 @@ FRAGMENT_SHADER_CODE
 		//one one sample
 
 
-        shadow = sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord.xy, pssm_coord.z, light_clamp, shadow_blur, shadow_dither_mode, shadow_temporal_offset);
+        shadow = sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord.xy, pssm_coord.z, light_clamp, dir_blur, shadow_dither_mode, shadow_temporal_offset);
 
         // Smoothly blends the shadow away at grazing angles (N.L < 0.1).
         // Since diffuse is already near 0 here, it hides the faceted teeth with 0 light leaking.
@@ -3272,7 +3393,7 @@ FRAGMENT_SHADER_CODE
 #ifdef LIGHT_USE_PSSM_BLEND //ubershader-runtime
 
 		if (use_blend) {
-			shadow = mix(shadow, sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord2.xy, pssm_coord2.z, light_clamp, shadow_blur, shadow_dither_mode, shadow_temporal_offset), pssm_blend);
+			shadow = mix(shadow, sample_shadow(directional_shadow, directional_shadow_pixel_size, pssm_coord2.xy, pssm_coord2.z, light_clamp, dir_blur, shadow_dither_mode, shadow_temporal_offset), pssm_blend);
 		}
 #endif //ubershader-runtime
 
@@ -3282,8 +3403,8 @@ FRAGMENT_SHADER_CODE
 			shadow = min(shadow, contact_shadow);
 		}
 #endif //ubershader-runtime
-		float pssm_fade = smoothstep(fade_from, -shadow_split_offsets.w, vertex.z);
-		light_attenuation = mix(mix(shadow_color_contact.rgb, vec3(1.0), shadow), vec3(1.0), pssm_fade);
+        float pssm_fade = smoothstep(fade_from, -shadow_split_offsets.w, vertex.z);
+		light_attenuation = mix(mix(shadow_color_contact.rgb, light_attenuation, shadow), light_attenuation, pssm_fade);
 	}
 
 #endif // !defined(SHADOWS_DISABLED)
@@ -3297,26 +3418,12 @@ FRAGMENT_SHADER_CODE
     current_distance_attenuation = vec3(1.0);
 
 	vec3 d_light_color = light_color_energy.rgb;
-	int dir_tex_layer = int(dir_projector_params1.y + 0.5);
-	bool dir_proj_only = dir_projector_params1.w > 0.5;
+	bool dir_proj_only = (!dir_proj_disabled) && has_dir_proj && (dir_projector_params1.w > 0.5);
 
-	if (dir_tex_layer >= 0) {
-		vec2 dir_uv;
-		if (dir_projector_params3.z > 0.5) {
-			// Follow View: project aligned with camera screen UV
-			dir_uv = screen_uv;
-		} else {
-			// Repeat: world planar projection
-			dir_uv = vertex.xy;
-		}
-		dir_uv = transform_projector_uv(dir_uv, dir_projector_params2.xy, dir_projector_params2.zw, dir_projector_params3.x);
-		if (dir_projector_params1.z > 0.5) {
-			dir_uv = fract(dir_uv);
-		}
-		if (dir_projector_params1.z > 0.5 || (dir_uv.x >= 0.0 && dir_uv.x <= 1.0 && dir_uv.y >= 0.0 && dir_uv.y <= 1.0)) {
-			vec4 proj_sample = textureLod(projector_array, vec3(dir_uv, float(dir_tex_layer)), dir_projector_params3.y);
-			vec3 tinted = d_light_color * proj_sample.rgb;
-			d_light_color = mix(dir_projector_color.rgb, tinted, proj_sample.a);
+	if (!dir_proj_disabled && has_dir_proj) {
+		if (dir_in_bounds) {
+			vec3 tinted = d_light_color * dir_proj_sample.rgb;
+			d_light_color = mix(dir_projector_color.rgb, tinted, dir_proj_sample.a);
 		} else {
 			d_light_color = dir_projector_color.rgb;
 		}

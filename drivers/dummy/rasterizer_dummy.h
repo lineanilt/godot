@@ -507,6 +507,9 @@ public:
 	void light_set_projector_lod(RID p_light, float p_lod) {}
 	void light_set_projector_repeat(RID p_light, bool p_repeat) {}
 	void light_set_projector_only(RID p_light, bool p_enable) {}
+	void light_set_projector_disable(RID p_light, bool p_disable) {}
+	void light_set_projector_use_as_shadow_blur_map(RID p_light, bool p_enable) {}
+	void light_set_projector_invert_shadow_blur_map(RID p_light, bool p_enable) {}
 	void light_directional_set_projector_mode(RID p_light, VS::LightDirectionalProjectorMode p_mode) {}
 	void light_set_projector(RID p_light, RID p_texture) {}
 	void light_set_negative(RID p_light, bool p_enable) {}

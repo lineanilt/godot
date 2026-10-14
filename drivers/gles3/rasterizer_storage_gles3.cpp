@@ -5481,6 +5481,9 @@ RID RasterizerStorageGLES3::light_create(VS::LightType p_type) {
 	light->projector_lod = 0.0f;
 	light->projector_repeat = false;
 	light->projector_only = false;
+	light->projector_disable = false;
+	light->projector_use_as_shadow_blur_map = false;
+	light->projector_invert_shadow_blur_map = false;
 	light->directional_projector_mode = VS::LIGHT_DIRECTIONAL_PROJECTOR_REPEAT;
 	light->shadow = false;
 	light->negative = false;
@@ -5591,6 +5594,30 @@ void RasterizerStorageGLES3::light_set_projector_only(RID p_light, bool p_enable
 	Light *light = light_owner.getornull(p_light);
 	ERR_FAIL_COND(!light);
 	light->projector_only = p_enable;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_disable(RID p_light, bool p_disable) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_disable = p_disable;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_use_as_shadow_blur_map(RID p_light, bool p_enable) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_use_as_shadow_blur_map = p_enable;
+	light->version++;
+	light->instance_change_notify(true, false);
+}
+
+void RasterizerStorageGLES3::light_set_projector_invert_shadow_blur_map(RID p_light, bool p_enable) {
+	Light *light = light_owner.getornull(p_light);
+	ERR_FAIL_COND(!light);
+	light->projector_invert_shadow_blur_map = p_enable;
 	light->version++;
 	light->instance_change_notify(true, false);
 }

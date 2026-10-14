@@ -2008,6 +2008,9 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("light_set_projector_lod", "light", "lod"), &VisualServer::light_set_projector_lod);
 	ClassDB::bind_method(D_METHOD("light_set_projector_repeat", "light", "repeat"), &VisualServer::light_set_projector_repeat);
 	ClassDB::bind_method(D_METHOD("light_set_projector_only", "light", "projector_only"), &VisualServer::light_set_projector_only);
+	ClassDB::bind_method(D_METHOD("light_set_projector_disable", "light", "disable"), &VisualServer::light_set_projector_disable);
+	ClassDB::bind_method(D_METHOD("light_set_projector_use_as_shadow_blur_map", "light", "enable"), &VisualServer::light_set_projector_use_as_shadow_blur_map);
+	ClassDB::bind_method(D_METHOD("light_set_projector_invert_shadow_blur_map", "light", "enable"), &VisualServer::light_set_projector_invert_shadow_blur_map);
 	ClassDB::bind_method(D_METHOD("light_directional_set_projector_mode", "light", "mode"), &VisualServer::light_directional_set_projector_mode);
 	ClassDB::bind_method(D_METHOD("light_set_projector", "light", "texture"), &VisualServer::light_set_projector);
 	ClassDB::bind_method(D_METHOD("light_set_negative", "light", "enable"), &VisualServer::light_set_negative);

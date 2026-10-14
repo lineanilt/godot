@@ -467,6 +467,9 @@ public:
 	virtual void light_set_projector_lod(RID p_light, float p_lod) = 0;
 	virtual void light_set_projector_repeat(RID p_light, bool p_repeat) = 0;
 	virtual void light_set_projector_only(RID p_light, bool p_enable) = 0;
+	virtual void light_set_projector_disable(RID p_light, bool p_disable) = 0;
+	virtual void light_set_projector_use_as_shadow_blur_map(RID p_light, bool p_enable) = 0;
+	virtual void light_set_projector_invert_shadow_blur_map(RID p_light, bool p_enable) = 0;
 
 	enum LightDirectionalProjectorMode {
 		LIGHT_DIRECTIONAL_PROJECTOR_REPEAT,

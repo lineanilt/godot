@@ -72,6 +72,9 @@ public:
 	float projector_lod;
 	bool projector_repeat;
 	bool projector_only;
+	bool projector_disable;
+	bool projector_use_as_shadow_blur_map;
+	bool projector_invert_shadow_blur_map;
 
 	enum BlobShadowParam {
 		BLOB_SHADOW_PARAM_RANGE_HARDNESS,
@@ -159,6 +162,15 @@ public:
 
 	void set_projector_only(bool p_enable);
 	bool is_projector_only() const;
+
+	void set_projector_disable(bool p_disable);
+	bool is_projector_disable() const;
+
+	void set_projector_use_as_shadow_blur_map(bool p_enable);
+	bool is_projector_use_as_shadow_blur_map() const;
+
+	void set_projector_invert_shadow_blur_map(bool p_enable);
+	bool is_projector_invert_shadow_blur_map() const;
 
 	void set_projector(const Ref<Texture> &p_texture);
 	Ref<Texture> get_projector() const;

@@ -327,7 +327,10 @@ void Light::_validate_property(PropertyInfo &property) const {
 		property.usage = PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL;
 	}
 
-	if (bake_mode != BAKE_ALL && property.name == "light_size") {
+	// DirectionalLight can bake shadowmasks with its bake mode set to Indirect,
+	// so the light size is still relevant to display in this case.
+	const bool can_bake_shadowmask = type == VS::LIGHT_DIRECTIONAL && bake_mode == BAKE_INDIRECT;
+	if (!can_bake_shadowmask && bake_mode != BAKE_ALL && property.name == "light_size") {
 		property.usage = PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL;
 	}
 }
@@ -364,6 +367,15 @@ void Light::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_projector_only", "enable"), &Light::set_projector_only);
 	ClassDB::bind_method(D_METHOD("is_projector_only"), &Light::is_projector_only);
+
+	ClassDB::bind_method(D_METHOD("set_projector_disable", "disable"), &Light::set_projector_disable);
+	ClassDB::bind_method(D_METHOD("is_projector_disable"), &Light::is_projector_disable);
+
+	ClassDB::bind_method(D_METHOD("set_projector_use_as_shadow_blur_map", "enable"), &Light::set_projector_use_as_shadow_blur_map);
+	ClassDB::bind_method(D_METHOD("is_projector_use_as_shadow_blur_map"), &Light::is_projector_use_as_shadow_blur_map);
+
+	ClassDB::bind_method(D_METHOD("set_projector_invert_shadow_blur_map", "enable"), &Light::set_projector_invert_shadow_blur_map);
+	ClassDB::bind_method(D_METHOD("is_projector_invert_shadow_blur_map"), &Light::is_projector_invert_shadow_blur_map);
 
 	ClassDB::bind_method(D_METHOD("set_editor_only", "editor_only"), &Light::set_editor_only);
 	ClassDB::bind_method(D_METHOD("is_editor_only"), &Light::is_editor_only);
@@ -432,6 +444,9 @@ void Light::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "projector_lod", PROPERTY_HINT_RANGE, "0,10,0.1"), "set_projector_lod", "get_projector_lod");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_repeat"), "set_projector_repeat", "is_projector_repeat");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_only"), "set_projector_only", "is_projector_only");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_disable"), "set_projector_disable", "is_projector_disable");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_use_as_shadow_blur_map"), "set_projector_use_as_shadow_blur_map", "is_projector_use_as_shadow_blur_map");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "projector_invert_shadow_blur_map"), "set_projector_invert_shadow_blur_map", "is_projector_invert_shadow_blur_map");
 	ADD_GROUP("Blob Shadow", "blob_shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "blob_shadow_enabled"), "set_blob_shadow", "has_blob_shadow");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "blob_shadow_shadow_only"), "set_blob_shadow_shadow_only", "is_blob_shadow_shadow_only");
@@ -546,6 +561,30 @@ bool Light::is_projector_only() const {
 	return projector_only;
 }
 
+void Light::set_projector_disable(bool p_disable) {
+	projector_disable = p_disable;
+	VS::get_singleton()->light_set_projector_disable(light, p_disable);
+}
+bool Light::is_projector_disable() const {
+	return projector_disable;
+}
+
+void Light::set_projector_use_as_shadow_blur_map(bool p_enable) {
+	projector_use_as_shadow_blur_map = p_enable;
+	VS::get_singleton()->light_set_projector_use_as_shadow_blur_map(light, p_enable);
+}
+bool Light::is_projector_use_as_shadow_blur_map() const {
+	return projector_use_as_shadow_blur_map;
+}
+
+void Light::set_projector_invert_shadow_blur_map(bool p_enable) {
+	projector_invert_shadow_blur_map = p_enable;
+	VS::get_singleton()->light_set_projector_invert_shadow_blur_map(light, p_enable);
+}
+bool Light::is_projector_invert_shadow_blur_map() const {
+	return projector_invert_shadow_blur_map;
+}
+
 void Light::set_projector(const Ref<Texture> &p_texture) {
 	projector_texture = p_texture;
 	VS::get_singleton()->light_set_projector(light, p_texture.is_valid() ? p_texture->get_rid() : RID());
@@ -606,6 +645,9 @@ Light::Light(VisualServer::LightType p_type) {
 	projector_lod = 0.0f;
 	projector_repeat = false;
 	projector_only = false;
+	projector_disable = false;
+	projector_use_as_shadow_blur_map = false;
+	projector_invert_shadow_blur_map = false;
 	VS::get_singleton()->light_set_projector_color(light, projector_color_2);
 
 	// set_disable_scale(true);
@@ -706,7 +748,7 @@ void DirectionalLight::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_projector_mode", "mode"), &DirectionalLight::set_projector_mode);
 	ClassDB::bind_method(D_METHOD("get_projector_mode"), &DirectionalLight::get_projector_mode);
 
-	ADD_GROUP("Projector", "directional_projector_");
+	ADD_GROUP("Directional Projector", "directional_projector_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_projector_mode", PROPERTY_HINT_ENUM, "Repeat,Follow View"), "set_projector_mode", "get_projector_mode");
 	BIND_ENUM_CONSTANT(PROJECTOR_MODE_REPEAT);
 	BIND_ENUM_CONSTANT(PROJECTOR_MODE_FOLLOW_VIEW);

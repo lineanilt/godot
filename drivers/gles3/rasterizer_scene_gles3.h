@@ -650,6 +650,7 @@ public:
 		float dir_projector_params1[4]; // preset, layer, repeat, projector_only
 		float dir_projector_params2[4]; // scale.xy, offset.xy
 		float dir_projector_params3[4]; // rotation, lod, mode (0=repeat, 1=follow view), unused
+		float dir_projector_matrix[16];
 	};
 
 	struct LightInstance : public RID_Data {
