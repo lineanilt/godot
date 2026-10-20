@@ -165,6 +165,7 @@ public:
 		TK_HINT_COLOR,
 		TK_HINT_RANGE,
 		TK_SHADER_TYPE,
+		TK_GROUP_UNIFORMS,
 		TK_CURSOR,
 		TK_ERROR,
 		TK_EOF,
@@ -331,6 +332,7 @@ public:
 
 		virtual DataType get_datatype() const { return TYPE_VOID; }
 		virtual String get_datatype_name() const { return ""; }
+		virtual int get_array_size() const { return 0; }
 
 		Node(Type t) :
 				next(nullptr),
@@ -353,30 +355,36 @@ public:
 		DataPrecision return_precision_cache;
 		Operator op;
 		StringName struct_name;
+		int array_size;
 		Vector<Node *> arguments;
 		virtual DataType get_datatype() const { return return_cache; }
 		virtual String get_datatype_name() const { return String(struct_name); }
+		virtual int get_array_size() const { return array_size; }
 
 		OperatorNode() :
 				Node(TYPE_OPERATOR),
 				return_cache(TYPE_VOID),
 				return_precision_cache(PRECISION_DEFAULT),
 				op(OP_EQUAL),
-				struct_name("") {}
+				struct_name(""),
+				array_size(0) {}
 	};
 
 	struct VariableNode : public Node {
 		DataType datatype_cache;
 		StringName name;
 		StringName struct_name;
+		int array_size;
 		virtual DataType get_datatype() const { return datatype_cache; }
 		virtual String get_datatype_name() const { return String(struct_name); }
+		virtual int get_array_size() const { return array_size; }
 		bool is_const;
 		bool is_local;
 
 		VariableNode() :
 				Node(TYPE_VARIABLE),
 				datatype_cache(TYPE_VOID),
+				array_size(0),
 				is_const(false),
 				is_local(false) {}
 	};
@@ -414,6 +422,7 @@ public:
 
 		virtual DataType get_datatype() const { return datatype_cache; }
 		virtual String get_datatype_name() const { return String(struct_name); }
+		virtual int get_array_size() const { return 0; }
 
 		ArrayNode() :
 				Node(TYPE_ARRAY),
@@ -474,6 +483,7 @@ public:
 		Vector<ArrayDeclarationNode::Declaration> array_declarations;
 		virtual DataType get_datatype() const { return datatype; }
 		virtual String get_datatype_name() const { return struct_name; }
+		virtual int get_array_size() const { return array_size; }
 
 		ConstantNode() :
 				Node(TYPE_CONSTANT),
@@ -606,9 +616,18 @@ public:
 			bool callable;
 		};
 
+
 		struct Struct {
 			StringName name;
-			StructNode *shader_struct;
+			StructNode *shader_struct = nullptr;
+
+			struct Member {
+				StringName name;
+				DataType type = TYPE_VOID;
+				StringName struct_name;
+				int array_size = 0;
+			};
+			Vector<Member> members;
 		};
 
 		struct Varying {
@@ -651,12 +670,16 @@ public:
 			};
 
 			int order;
+			int array_size = 0;
 			int texture_order;
 			DataType type;
 			DataPrecision precision;
 			Vector<ConstantNode::Value> default_value;
 			Hint hint;
 			float hint_range[3];
+			String group;
+			String subgroup;
+			StringName struct_name;
 
 			Uniform() :
 					order(0),

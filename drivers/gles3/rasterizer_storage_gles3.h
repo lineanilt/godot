@@ -428,6 +428,7 @@ public:
 		SelfList<Material>::List materials;
 
 		Map<StringName, ShaderLanguage::ShaderNode::Uniform> uniforms;
+		Map<StringName, ShaderLanguage::ShaderNode::Struct> structs;
 		Vector<uint32_t> ubo_offsets;
 		uint32_t ubo_size;
 

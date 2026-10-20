@@ -4270,6 +4270,87 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 					return;
 				}
 			} break;
+
+			case GDScriptTokenizer::TK_PR_EXPORT_CATEGORY: {
+				tokenizer->advance();
+				if (tokenizer->get_token() != GDScriptTokenizer::TK_PARENTHESIS_OPEN) {
+					_set_error("Expected '(' after 'export_category'.");
+					return;
+				}
+				tokenizer->advance();
+				String category_name = "Script Variables";
+				if (tokenizer->get_token() == GDScriptTokenizer::TK_CONSTANT && tokenizer->get_token_constant().get_type() == Variant::STRING) {
+					category_name = tokenizer->get_token_constant();
+					if (category_name.empty()) {
+						category_name = "Script Variables";
+					}
+					tokenizer->advance();
+				} else if (tokenizer->get_token() == GDScriptTokenizer::TK_PARENTHESIS_CLOSE) {
+					// Allow export_category() to default to "Script Variables"
+				} else {
+					_set_error("Expected a string constant for category name.");
+					return;
+				}
+
+				if (tokenizer->get_token() != GDScriptTokenizer::TK_PARENTHESIS_CLOSE) {
+					_set_error("Expected ')' after 'export_category' arguments.");
+					return;
+				}
+				tokenizer->advance();
+
+				ClassNode::Member category_member;
+				category_member.identifier = category_name;
+				category_member._export = PropertyInfo(Variant::NIL, category_name, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CATEGORY);
+				category_member.line = tokenizer->get_token_line();
+				p_class->variables.push_back(category_member);
+
+				if (!_end_statement()) {
+					_set_end_statement_error("export_category");
+					return;
+				}
+			} break;
+			case GDScriptTokenizer::TK_PR_EXPORT_GROUP: {
+				tokenizer->advance();
+				if (tokenizer->get_token() != GDScriptTokenizer::TK_PARENTHESIS_OPEN) {
+					_set_error("Expected '(' after 'export_group'.");
+					return;
+				}
+				tokenizer->advance();
+				if (tokenizer->get_token() != GDScriptTokenizer::TK_CONSTANT || tokenizer->get_token_constant().get_type() != Variant::STRING) {
+					_set_error("Expected a string constant for group name.");
+					return;
+				}
+				String group_name = tokenizer->get_token_constant();
+				String prefix = "";
+
+				tokenizer->advance();
+				if (tokenizer->get_token() == GDScriptTokenizer::TK_COMMA) {
+					tokenizer->advance();
+					if (tokenizer->get_token() != GDScriptTokenizer::TK_CONSTANT || tokenizer->get_token_constant().get_type() != Variant::STRING) {
+						_set_error("Expected a string constant for group prefix.");
+						return;
+					}
+					prefix = tokenizer->get_token_constant();
+					tokenizer->advance();
+				}
+
+				if (tokenizer->get_token() != GDScriptTokenizer::TK_PARENTHESIS_CLOSE) {
+					_set_error("Expected ')' after 'export_group' arguments.");
+					return;
+				}
+				tokenizer->advance();
+
+				ClassNode::Member group_member;
+				group_member.identifier = group_name;
+				group_member._export = PropertyInfo(Variant::NIL, group_name, PROPERTY_HINT_NONE, prefix, PROPERTY_USAGE_GROUP);
+				group_member.line = tokenizer->get_token_line();
+				p_class->variables.push_back(group_member);
+
+				if (!_end_statement()) {
+					_set_end_statement_error("export_group");
+					return;
+				}
+			} break;
 			case GDScriptTokenizer::TK_PR_EXPORT: {
 				tokenizer->advance();
 
@@ -7950,6 +8031,10 @@ void GDScriptParser::_check_class_level_types(ClassNode *p_class) {
 	for (int i = 0; i < p_class->variables.size(); i++) {
 		ClassNode::Member &v = p_class->variables.write[i];
 
+		if (v._export.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY)) {
+			continue;
+		}
+
 		DataType tmp;
 		if (v.identifier == script_name || _get_member_type(p_class->base_type, v.identifier, tmp)) {
 			_set_error("The member \"" + String(v.identifier) + "\" already exists in a parent class.", v.line);
@@ -8301,9 +8386,13 @@ void GDScriptParser::_check_class_blocks_types(ClassNode *p_class) {
 		}
 	}
 
+
 #ifdef DEBUG_ENABLED
 	// Warnings
 	for (int i = 0; i < p_class->variables.size(); i++) {
+		if (p_class->variables[i]._export.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY)) {
+			continue;
+		}
 		if (p_class->variables[i].usages == 0) {
 			_add_warning(GDScriptWarning::UNUSED_CLASS_VARIABLE, p_class->variables[i].line, p_class->variables[i].identifier);
 		}

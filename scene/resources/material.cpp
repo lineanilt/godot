@@ -151,7 +151,26 @@ bool ShaderMaterial::_get(const StringName &p_name, Variant &r_ret) const {
 
 void ShaderMaterial::_get_property_list(List<PropertyInfo> *p_list) const {
 	if (!shader.is_null()) {
-		shader->get_param_list(p_list);
+		List<PropertyInfo> pl;
+		shader->get_param_list(&pl);
+		bool first_group = true;
+		for (List<PropertyInfo>::Element *E = pl.front(); E; E = E->next()) {
+			PropertyInfo pi = E->get();
+			if (pi.usage & PROPERTY_USAGE_GROUP) {
+				pi.name = pi.name.replace_first("shader_param/", "");
+				pi.hint_string = "shader_param/";
+
+				// Drop the default empty "Shader Param" header if followed immediately by a custom group
+				if (first_group && pi.name == "Shader Param") {
+					List<PropertyInfo>::Element *next = E->next();
+					if (next && (next->get().usage & PROPERTY_USAGE_GROUP)) {
+						continue;
+					}
+				}
+				first_group = false;
+			}
+			p_list->push_back(pi);
+		}
 	}
 }
 
@@ -244,6 +263,9 @@ void ShaderMaterial::get_argument_options(const StringName &p_function, int p_id
 			List<PropertyInfo> pl;
 			shader->get_param_list(&pl);
 			for (List<PropertyInfo>::Element *E = pl.front(); E; E = E->next()) {
+				if (E->get().usage & PROPERTY_USAGE_GROUP) {
+					continue;
+				}
 				r_options->push_back(quote_style + E->get().name.replace_first("shader_param/", "") + quote_style);
 			}
 		}

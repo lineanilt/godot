@@ -581,7 +581,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	strings_common.push_back("#extension GL_OES_gpu_shader5 : enable\n");
 	strings_common.push_back("#extension GL_ARB_derivative_control : enable\n");
 	strings_common.push_back("#extension GL_ARB_gpu_shader_fp64 : enable\n");
-	
+
 #endif
 
 #ifdef ANDROID_ENABLED
@@ -1125,7 +1125,11 @@ void ShaderGLES3::_dispose_program(Version *p_version) {
 
 GLint ShaderGLES3::get_uniform_location(const String &p_name) const {
 	ERR_FAIL_COND_V(!version, -1);
-	return glGetUniformLocation(version->ids.main, p_name.ascii().get_data());
+	GLint loc = glGetUniformLocation(version->ids.main, p_name.ascii().get_data());
+	if (loc < 0) {
+		loc = glGetUniformLocation(version->ids.main, (p_name + "[0]").ascii().get_data());
+	}
+	return loc;
 }
 
 void ShaderGLES3::setup(const char **p_conditional_defines, int p_conditional_count, const char **p_uniform_names, int p_uniform_count, const AttributePair *p_attribute_pairs, int p_attribute_count, const TexUnitPair *p_texunit_pairs, int p_texunit_pair_count, const UBOPair *p_ubo_pairs, int p_ubo_pair_count, const Feedback *p_feedback, int p_feedback_count, const char *p_vertex_code, const char *p_fragment_code, int p_vertex_code_start, int p_fragment_code_start) {

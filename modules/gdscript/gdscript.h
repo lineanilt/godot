@@ -99,6 +99,7 @@ class GDScript : public Script {
 
 #endif
 	Map<StringName, PropertyInfo> member_info;
+	List<PropertyInfo> members_order;
 
 	GDScriptFunction *initializer; //direct pointer to _init , faster to locate
 

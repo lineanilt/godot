@@ -178,6 +178,14 @@ ShaderTypes::ShaderTypes() {
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SCREEN_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["DEPTH_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["CUSTOM_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SHADOW_ATLAS"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["DIRECTIONAL_SHADOWMAP"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_TYPE"] = constt(ShaderLanguage::TYPE_INT);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_DIRECTIONAL"] = constt(ShaderLanguage::TYPE_INT);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_OMNI"] = constt(ShaderLanguage::TYPE_INT);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_SPOT"] = constt(ShaderLanguage::TYPE_INT);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SHADOW_COORDS"] = constt(ShaderLanguage::TYPE_VEC4);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["PSSM_OFFSET"] = constt(ShaderLanguage::TYPE_VEC4);
 
 	//order used puts first enum mode (default) first
 	shader_modes[VS::SHADER_SPATIAL].modes.push_back("blend_mix");

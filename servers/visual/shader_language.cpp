@@ -206,6 +206,7 @@ const char *ShaderLanguage::token_names[TK_MAX] = {
 	"HINT_COLOR",
 	"HINT_RANGE",
 	"SHADER_TYPE",
+	"GROUP_UNIFORMS",
 	"CURSOR",
 	"ERROR",
 	"EOF",
@@ -304,6 +305,7 @@ const ShaderLanguage::KeyWord ShaderLanguage::keyword_list[] = {
 	{ TK_HINT_COLOR, "hint_color" },
 	{ TK_HINT_RANGE, "hint_range" },
 	{ TK_SHADER_TYPE, "shader_type" },
+	{ TK_GROUP_UNIFORMS, "group_uniforms" },
 
 	{ TK_ERROR, nullptr }
 };
@@ -1045,6 +1047,12 @@ bool ShaderLanguage::_find_identifier(const BlockNode *p_block, const Map<String
 	if (shader->uniforms.has(p_identifier)) {
 		if (r_data_type) {
 			*r_data_type = shader->uniforms[p_identifier].type;
+		}
+		if (r_array_size) {
+			*r_array_size = shader->uniforms[p_identifier].array_size;
+		}
+		if (r_struct_name) {
+			*r_struct_name = shader->uniforms[p_identifier].struct_name;
 		}
 		if (r_type) {
 			*r_type = IDENTIFIER_UNIFORM;
@@ -2160,7 +2168,7 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "textureGrad", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "textureGrad", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 
-	
+
 	// 2D Samplers (float, int, uint)
 	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, TAG_GLOBAL, true },
@@ -2186,20 +2194,20 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "dFdxFine", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "dFdxFine", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "dFdxFine", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
-	
+
 	// dFdyFine
 	{ "dFdyFine", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "dFdyFine", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "dFdyFine", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "dFdyFine", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
-	
-	// fwidthFine (optional, but convenient as hell)
+
+	// fwidthFine
 	{ "fwidthFine", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fwidthFine", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fwidthFine", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fwidthFine", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
 
-	
+
 	{ "fma", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fma", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fma", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
@@ -2219,6 +2227,11 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "fwidth", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fwidth", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "fwidth", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
+
+
+	{ "texture_shadow", TYPE_FLOAT, { TYPE_SAMPLER2D, TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
+	{ "texture_shadow", TYPE_FLOAT, { TYPE_SAMPLER2D, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
+
 
 	//sub-functions
 
@@ -3025,6 +3038,13 @@ bool ShaderLanguage::_validate_assign(Node *p_node, const Map<StringName, BuiltI
 		}
 	} else if (p_node->type == Node::TYPE_ARRAY) {
 		ArrayNode *arr = static_cast<ArrayNode *>(p_node);
+
+		if (shader->uniforms.has(arr->name)) {
+			if (r_message) {
+				*r_message = RTR("Assignment to uniform.");
+			}
+			return false;
+		}
 
 		if (shader->constants.has(arr->name) || arr->is_const) {
 			if (r_message) {
@@ -5744,9 +5764,53 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 
 	int texture_uniforms = 0;
 	int uniforms = 0;
+	String current_group;
+	String current_subgroup;
 
 	while (tk.type != TK_EOF) {
 		switch (tk.type) {
+			case TK_GROUP_UNIFORMS: {
+				tk = _get_token();
+				if (tk.type == TK_SEMICOLON) {
+					current_group = "";
+					current_subgroup = "";
+				} else if (tk.type == TK_IDENTIFIER) {
+					current_group = tk.text;
+					current_subgroup = "";
+
+					// Collect words separated by spaces until '.' or ';'
+					tk = _get_token();
+					while (tk.type == TK_IDENTIFIER) {
+						current_group += " " + tk.text;
+						tk = _get_token();
+					}
+
+					// Optional subgroup after '.'
+					if (tk.type == TK_PERIOD) {
+						tk = _get_token();
+						if (tk.type != TK_IDENTIFIER) {
+							_set_error("Expected identifier for subgroup name.");
+							return ERR_PARSE_ERROR;
+						}
+						current_subgroup = tk.text;
+
+						// Collect subgroup words separated by spaces until ';'
+						tk = _get_token();
+						while (tk.type == TK_IDENTIFIER) {
+							current_subgroup += " " + tk.text;
+							tk = _get_token();
+						}
+					}
+
+					if (tk.type != TK_SEMICOLON) {
+						_set_error("Expected ';' after group_uniforms.");
+						return ERR_PARSE_ERROR;
+					}
+				} else {
+					_set_error("Expected identifier or ';' after 'group_uniforms'.");
+					return ERR_PARSE_ERROR;
+				}
+			} break;
 			case TK_RENDER_MODE: {
 				while (true) {
 					StringName mode;
@@ -5912,6 +5976,14 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 							}
 
 							st_node->members.push_back(member);
+
+							ShaderNode::Struct::Member sm;
+							sm.name = member->name;
+							sm.type = member->datatype;
+							sm.struct_name = member->struct_name;
+							sm.array_size = member->array_size;
+							st.members.push_back(sm);
+
 							member_count++;
 						} while (tk.type == TK_COMMA); // another member
 					}
@@ -5933,6 +6005,8 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 			case TK_UNIFORM:
 			case TK_VARYING: {
 				bool uniform = tk.type == TK_UNIFORM;
+				bool is_struct = false;
+				StringName struct_name;
 				DataPrecision precision = PRECISION_DEFAULT;
 				DataInterpolation interpolation = INTERPOLATION_SMOOTH;
 				DataType type;
@@ -5950,12 +6024,26 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 					tk = _get_token();
 				}
 
-				if (!is_token_datatype(tk.type)) {
-					_set_error("Expected datatype. ");
-					return ERR_PARSE_ERROR;
-				}
+				if (shader->structs.has(tk.text)) {
+					if (!uniform) {
+						_set_error("Varyings cannot be structs.");
+						return ERR_PARSE_ERROR;
+					}
+					if (precision != PRECISION_DEFAULT) {
+						_set_error("Precision modifier cannot be used on structs.");
+						return ERR_PARSE_ERROR;
+					}
+					is_struct = true;
+					struct_name = tk.text;
+					type = TYPE_STRUCT;
+				} else {
+					if (!is_token_datatype(tk.type)) {
+						_set_error("Expected datatype. ");
+						return ERR_PARSE_ERROR;
+					}
 
-				type = get_token_datatype(tk.type);
+					type = get_token_datatype(tk.type);
+				}
 
 				if (type == TYPE_VOID) {
 					_set_error("void datatype not allowed here");
@@ -5971,25 +6059,49 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 
 				if (tk.type == TK_BRACKET_OPEN) {
 					if (uniform) {
-						_set_error(vformat("Uniform arrays are not yet implemented!"));
-						return ERR_PARSE_ERROR;
+						if (type != TYPE_VEC3 && type != TYPE_VEC4 && type != TYPE_STRUCT) {
+							_set_error("Uniform arrays are only supported for vec3, vec4, and struct types.");
+							return ERR_PARSE_ERROR;
+						}
 					}
 					tk = _get_token();
 
-					if (tk.type == TK_INT_CONSTANT && tk.constant > 0) {
-						array_size = (int)tk.constant;
-
-						tk = _get_token();
-						if (tk.type == TK_BRACKET_CLOSE) {
-							tk = _get_token();
+					if (tk.type == TK_IDENTIFIER) {
+						StringName const_name = tk.text;
+						if (shader->constants.has(const_name)) {
+							const ShaderLanguage::ShaderNode::Constant &c = shader->constants[const_name];
+							ConstantNode *cn = c.initializer;
+							int val = 0;
+							if (cn && cn->values.size() == 1) {
+								if (c.type == TYPE_INT) {
+									val = cn->values[0].sint;
+								} else if (c.type == TYPE_UINT) {
+									val = (int)cn->values[0].uint;
+								}
+							}
+							if (val > 0) {
+								array_size = val;
+							} else {
+								_set_error("Expected single integer constant > 0");
+								return ERR_PARSE_ERROR;
+							}
 						} else {
-							_set_error("Expected ']'");
+							_set_error("Unknown constant: '" + tk.text + "'.");
 							return ERR_PARSE_ERROR;
 						}
+					} else if (tk.is_integer_constant() && tk.constant > 0) {
+						array_size = (int)tk.constant;
 					} else {
-						_set_error("Expected integer constant > 0");
+						_set_error("Expected single integer constant > 0");
 						return ERR_PARSE_ERROR;
 					}
+
+					tk = _get_token();
+					if (tk.type != TK_BRACKET_CLOSE) {
+						_set_error("Expected ']'");
+						return ERR_PARSE_ERROR;
+					}
+					tk = _get_token();
 				}
 
 				if (tk.type != TK_IDENTIFIER) {
@@ -6030,7 +6142,87 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 
 					tk = _get_token();
 
+					if (tk.type == TK_BRACKET_OPEN) {
+						if (array_size > 0) {
+							_set_error("Array size is already defined!");
+							return ERR_PARSE_ERROR;
+						}
+						if (type != TYPE_VEC3 && type != TYPE_VEC4 && type != TYPE_STRUCT) {
+							_set_error("Uniform arrays are only supported for vec3, vec4, and struct types.");
+							return ERR_PARSE_ERROR;
+						}
+						tk = _get_token();
+						if (tk.type == TK_IDENTIFIER) {
+							StringName const_name = tk.text;
+							if (shader->constants.has(const_name)) {
+								const ShaderLanguage::ShaderNode::Constant &c = shader->constants[const_name];
+								ConstantNode *cn = c.initializer;
+								int val = 0;
+								if (cn && cn->values.size() == 1) {
+									if (c.type == TYPE_INT) {
+										val = cn->values[0].sint;
+									} else if (c.type == TYPE_UINT) {
+										val = (int)cn->values[0].uint;
+									}
+								}
+								if (val > 0) {
+									array_size = val;
+								} else {
+									_set_error("Expected single integer constant > 0");
+									return ERR_PARSE_ERROR;
+								}
+							} else {
+								_set_error("Unknown constant: '" + tk.text + "'.");
+								return ERR_PARSE_ERROR;
+							}
+						} else if (tk.is_integer_constant() && tk.constant > 0) {
+							array_size = (int)tk.constant;
+						} else {
+							_set_error("Expected single integer constant > 0");
+							return ERR_PARSE_ERROR;
+						}
+						tk = _get_token();
+						if (tk.type != TK_BRACKET_CLOSE) {
+							_set_error("Expected ']'");
+							return ERR_PARSE_ERROR;
+						}
+						tk = _get_token();
+					}
+
+					uniform2.array_size = array_size;
+					if (type == TYPE_STRUCT) {
+						uniform2.struct_name = struct_name;
+						if (shader->structs.has(struct_name)) {
+							const ShaderNode::Struct &st = shader->structs[struct_name];
+							bool likely_corrupt = false;
+							for (int i = 0; i < st.members.size(); i++) {
+								if (is_sampler_type(st.members[i].type)) {
+									_set_error("Struct uniforms cannot contain sampler types.");
+									return ERR_PARSE_ERROR;
+								}
+								if (st.members[i].type == TYPE_STRUCT) {
+									_set_error("Nested structs inside uniform structs are not supported.");
+									return ERR_PARSE_ERROR;
+								}
+								if (st.members[i].type != TYPE_VEC4 && st.members[i].type != TYPE_MAT4) {
+									likely_corrupt = true;
+								}
+							}
+							if (likely_corrupt) {
+								WARN_PRINT("You are advised to use vec4s and mat4s in uniform shader structs due to std140.");
+							}
+						}
+					}
+
 					if (tk.type == TK_COLON) {
+						if (uniform2.type == TYPE_STRUCT) {
+							_set_error("Hints are not supported for struct uniforms.");
+							return ERR_PARSE_ERROR;
+						}
+						// if (uniform2.array_size > 0) {
+						// 	_set_error("Hints are not supported for uniform arrays.");
+						// 	return ERR_PARSE_ERROR;
+						// }
 						completion_type = COMPLETION_HINT;
 						completion_base = type;
 
@@ -6152,27 +6344,77 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 						tk = _get_token();
 					}
 
+
 					if (tk.type == TK_OP_ASSIGN) {
-						Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
-						if (!expr) {
-							return ERR_PARSE_ERROR;
-						}
-						if (expr->type != Node::TYPE_CONSTANT) {
-							_set_error("Expected constant expression after '='");
-							return ERR_PARSE_ERROR;
-						}
+						if (uniform2.array_size > 0) {
+							tk = _get_token();
+							if (tk.type != TK_CURLY_BRACKET_OPEN) {
+								_set_error("Expected '{' for uniform array default values.");
+								return ERR_PARSE_ERROR;
+							}
 
-						ConstantNode *cn = static_cast<ConstantNode *>(expr);
+							for (int i = 0; i < uniform2.array_size; i++) {
+								Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+								if (!expr) {
+									return ERR_PARSE_ERROR;
+								}
+								if (expr->type != Node::TYPE_CONSTANT) {
+									_set_error("Expected constant expression after '='");
+									return ERR_PARSE_ERROR;
+								}
 
-						uniform2.default_value.resize(cn->values.size());
+								ConstantNode *cn = static_cast<ConstantNode *>(expr);
+								Vector<ConstantNode::Value> elem_values;
+								elem_values.resize(cn->values.size());
 
-						if (!convert_constant(cn, uniform2.type, uniform2.default_value.ptrw())) {
-							_set_error("Can't convert constant to " + get_datatype_name(uniform2.type));
-							return ERR_PARSE_ERROR;
+								if (!convert_constant(cn, uniform2.type, elem_values.ptrw())) {
+									_set_error("Can't convert constant to " + get_datatype_name(uniform2.type));
+									return ERR_PARSE_ERROR;
+								}
+
+								for (int j = 0; j < elem_values.size(); j++) {
+									uniform2.default_value.push_back(elem_values[j]);
+								}
+
+								if (i < uniform2.array_size - 1) {
+									tk = _get_token();
+									if (tk.type != TK_COMMA) {
+										_set_error("Expected ',' between array elements.");
+										return ERR_PARSE_ERROR;
+									}
+								}
+							}
+
+							tk = _get_token();
+							if (tk.type != TK_CURLY_BRACKET_CLOSE) {
+								_set_error("Expected '}' after uniform array default values.");
+								return ERR_PARSE_ERROR;
+							}
+							tk = _get_token();
+						} else {
+							Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+							if (!expr) {
+								return ERR_PARSE_ERROR;
+							}
+							if (expr->type != Node::TYPE_CONSTANT) {
+								_set_error("Expected constant expression after '='");
+								return ERR_PARSE_ERROR;
+							}
+
+							ConstantNode *cn = static_cast<ConstantNode *>(expr);
+
+							uniform2.default_value.resize(cn->values.size());
+
+							if (!convert_constant(cn, uniform2.type, uniform2.default_value.ptrw())) {
+								_set_error("Can't convert constant to " + get_datatype_name(uniform2.type));
+								return ERR_PARSE_ERROR;
+							}
+							tk = _get_token();
 						}
-						tk = _get_token();
 					}
 
+					uniform2.group = current_group;
+					uniform2.subgroup = current_subgroup;
 					shader->uniforms[name] = uniform2;
 
 					if (tk.type != TK_SEMICOLON) {

@@ -243,24 +243,14 @@ void GDScript::get_script_method_list(List<MethodInfo> *p_list) const {
 	}
 }
 
+
 void GDScript::get_script_property_list(List<PropertyInfo> *p_list) const {
 	const GDScript *sptr = this;
 	List<PropertyInfo> props;
 
 	while (sptr) {
-		Vector<_GDScriptMemberSort> msort;
-		for (Map<StringName, PropertyInfo>::Element *E = sptr->member_info.front(); E; E = E->next()) {
-			_GDScriptMemberSort ms;
-			ERR_CONTINUE(!sptr->member_indices.has(E->key()));
-			ms.index = sptr->member_indices[E->key()].index;
-			ms.name = E->key();
-			msort.push_back(ms);
-		}
-
-		msort.sort();
-		msort.invert();
-		for (int i = 0; i < msort.size(); i++) {
-			props.push_front(sptr->member_info[msort[i].name]);
+		for (const List<PropertyInfo>::Element *E = sptr->members_order.back(); E; E = E->prev()) {
+			props.push_front(E->get());
 		}
 
 		sptr = sptr->_base;
@@ -459,6 +449,11 @@ bool GDScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHolderSc
 			member_default_values_cache.clear();
 
 			for (int i = 0; i < c->variables.size(); i++) {
+				if (c->variables[i]._export.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY)) {
+					members_cache.push_back(c->variables[i]._export);
+					continue;
+				}
+
 				if (c->variables[i]._export.type == Variant::NIL) {
 					continue;
 				}
@@ -1796,6 +1791,8 @@ void GDScriptLanguage::get_reserved_words(List<String> *p_words) const {
 		"const",
 		"enum",
 		"export",
+		"export_group",
+		"export_category",
 		"onready",
 		"static",
 		"var",

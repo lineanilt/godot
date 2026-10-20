@@ -44,7 +44,9 @@ public:
 		Map<StringName, bool *> usage_flag_pointers;
 		Map<StringName, bool *> write_flag_pointers;
 
+
 		Map<StringName, ShaderLanguage::ShaderNode::Uniform> *uniforms;
+		Map<StringName, ShaderLanguage::ShaderNode::Struct> *structs;
 	};
 
 	struct GeneratedCode {

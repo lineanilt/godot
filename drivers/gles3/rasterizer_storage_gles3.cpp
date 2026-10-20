@@ -2198,6 +2198,7 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 	p_shader->ubo_size = 0;
 
 	p_shader->uniforms.clear();
+	p_shader->structs.clear();
 
 	if (p_shader->code == String()) {
 		return; //just invalid, but no error
@@ -2251,6 +2252,7 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 
 			actions = &shaders.actions_canvas;
 			actions->uniforms = &p_shader->uniforms;
+			actions->structs = &p_shader->structs;
 
 		} break;
 
@@ -2328,11 +2330,13 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 
 			actions = &shaders.actions_scene;
 			actions->uniforms = &p_shader->uniforms;
+			actions->structs = &p_shader->structs;
 
 		} break;
 		case VS::SHADER_PARTICLES: {
 			actions = &shaders.actions_particles;
 			actions->uniforms = &p_shader->uniforms;
+			actions->structs = &p_shader->structs;
 		} break;
 		case VS::SHADER_MAX:
 			break; // Can't happen, but silences warning
@@ -2401,13 +2405,168 @@ void RasterizerStorageGLES3::shader_get_param_list(RID p_shader, List<PropertyIn
 		}
 	}
 
+	String current_group = "";
+	String current_subgroup = "";
+
 	for (Map<int, StringName>::Element *E = order.front(); E; E = E->next()) {
-		PropertyInfo pi;
 		ShaderLanguage::ShaderNode::Uniform &u = shader->uniforms[E->get()];
+
+
+		static auto _format_group_name = [](const String &p_str) -> String {
+			if (p_str.empty()) {
+				return String();
+			}
+			String result;
+			for (int i = 0; i < p_str.length(); i++) {
+				CharType c = p_str[i];
+				if (c == '_') {
+					if (result.length() > 0 && result[result.length() - 1] != ' ') {
+						result += ' ';
+					}
+					continue;
+				}
+				if (c >= 'A' && c <= 'Z' && i > 0) {
+					CharType prev = p_str[i - 1];
+					// Insert space on transition: lower/digit to Upper ("myGroup" -> "my Group")
+					if ((prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9')) {
+						result += ' ';
+					} else if (prev >= 'A' && prev <= 'Z' && i + 1 < p_str.length()) {
+						// Insert space before last capital of an acronym followed by lowercase ("SSAOQuality" -> "SSAO Quality")
+						CharType next = p_str[i + 1];
+						if (next >= 'a' && next <= 'z') {
+							result += ' ';
+						}
+					}
+				}
+				result += c;
+			}
+			return result.strip_edges();
+		};
+
+		if (u.group != current_group) {
+			current_group = u.group;
+			current_subgroup = "";
+
+			PropertyInfo group_pi;
+			group_pi.usage = PROPERTY_USAGE_GROUP;
+			group_pi.name = current_group.empty() ? "Shader Param" : _format_group_name(current_group);
+			group_pi.hint_string = "shader_param/";
+			p_param_list->push_back(group_pi);
+		}
+
+		if (u.subgroup != current_subgroup) {
+			current_subgroup = u.subgroup;
+
+			if (!current_subgroup.empty()) {
+				PropertyInfo subgroup_pi;
+				subgroup_pi.usage = PROPERTY_USAGE_GROUP;
+				String group_prefix = current_group.empty() ? "" : _format_group_name(current_group) + "/";
+				subgroup_pi.name = group_prefix + _format_group_name(current_subgroup);
+				subgroup_pi.hint_string = "shader_param/";
+				p_param_list->push_back(subgroup_pi);
+			}
+		}
+
+		if (u.type == ShaderLanguage::TYPE_STRUCT && shader->structs.has(u.struct_name)) {
+			const ShaderLanguage::ShaderNode::Struct &st = shader->structs[u.struct_name];
+			int count = u.array_size > 0 ? u.array_size : 1;
+			for (int idx = 0; idx < count; idx++) {
+				for (int i = 0; i < st.members.size(); i++) {
+					const ShaderLanguage::ShaderNode::Struct::Member &mem = st.members[i];
+					String base_name;
+					if (u.array_size > 0) {
+						base_name = String(E->get()) + "/" + itos(idx) + "/" + String(mem.name);
+					} else {
+						base_name = String(E->get()) + "/" + String(mem.name);
+					}
+
+					if (mem.array_size > 0) {
+						if (mem.type == ShaderLanguage::TYPE_VEC3 || mem.type == ShaderLanguage::TYPE_VEC4) {
+							for (int a = 0; a < mem.array_size; a++) {
+								PropertyInfo elem_pi;
+								elem_pi.name = base_name + "/" + itos(a);
+								elem_pi.type = (mem.type == ShaderLanguage::TYPE_VEC3) ? Variant::VECTOR3 : Variant::PLANE;
+								p_param_list->push_back(elem_pi);
+							}
+							continue;
+						} else {
+							PropertyInfo arr_pi;
+							arr_pi.name = base_name;
+							arr_pi.type = Variant::ARRAY;
+							p_param_list->push_back(arr_pi);
+							continue;
+						}
+					}
+
+					PropertyInfo pi;
+					pi.name = base_name;
+					switch (mem.type) {
+						case ShaderLanguage::TYPE_BOOL:
+							pi.type = Variant::BOOL;
+							break;
+						case ShaderLanguage::TYPE_BVEC2:
+						case ShaderLanguage::TYPE_BVEC3:
+						case ShaderLanguage::TYPE_BVEC4:
+						case ShaderLanguage::TYPE_INT:
+						case ShaderLanguage::TYPE_UINT:
+							pi.type = Variant::INT;
+							break;
+						case ShaderLanguage::TYPE_FLOAT:
+							pi.type = Variant::REAL;
+							break;
+						case ShaderLanguage::TYPE_VEC2:
+							pi.type = Variant::VECTOR2;
+							break;
+						case ShaderLanguage::TYPE_VEC3:
+							pi.type = Variant::VECTOR3;
+							break;
+						case ShaderLanguage::TYPE_VEC4:
+							pi.type = Variant::PLANE;
+							break;
+						case ShaderLanguage::TYPE_MAT2:
+							pi.type = Variant::TRANSFORM2D;
+							break;
+						case ShaderLanguage::TYPE_MAT3:
+							pi.type = Variant::BASIS;
+							break;
+						case ShaderLanguage::TYPE_MAT4:
+							pi.type = Variant::TRANSFORM;
+							break;
+						default:
+							pi.type = Variant::NIL;
+							break;
+					}
+
+					if (pi.type != Variant::NIL) {
+						p_param_list->push_back(pi);
+					}
+				}
+			}
+			continue;
+		}
+
+		if (u.array_size > 0) {
+			for (int i = 0; i < u.array_size; i++) {
+				PropertyInfo pi;
+				pi.name = String(E->get()) + "/" + itos(i);
+				if (u.type == ShaderLanguage::TYPE_VEC3) {
+					pi.type = Variant::VECTOR3;
+				} else if (u.type == ShaderLanguage::TYPE_VEC4) {
+					if (u.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+						pi.type = Variant::COLOR;
+					} else {
+						pi.type = Variant::PLANE;
+					}
+				}
+				p_param_list->push_back(pi);
+			}
+			continue;
+		}
+
+		PropertyInfo pi;
 		pi.name = E->get();
 		switch (u.type) {
 			case ShaderLanguage::TYPE_STRUCT:
-				pi.type = Variant::ARRAY;
 				break;
 			case ShaderLanguage::TYPE_VOID:
 				pi.type = Variant::NIL;
@@ -2459,10 +2618,16 @@ void RasterizerStorageGLES3::shader_get_param_list(RID p_shader, List<PropertyIn
 				pi.type = Variant::VECTOR2;
 				break;
 			case ShaderLanguage::TYPE_VEC3:
-				pi.type = Variant::VECTOR3;
+				if (u.array_size > 0) {
+					pi.type = Variant::ARRAY;
+				} else {
+					pi.type = Variant::VECTOR3;
+				}
 				break;
 			case ShaderLanguage::TYPE_VEC4: {
-				if (u.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+				if (u.array_size > 0) {
+					pi.type = Variant::ARRAY;
+				} else if (u.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
 					pi.type = Variant::COLOR;
 				} else {
 					pi.type = Variant::PLANE;
@@ -2509,6 +2674,13 @@ void RasterizerStorageGLES3::shader_get_param_list(RID p_shader, List<PropertyIn
 		};
 
 		p_param_list->push_back(pi);
+	}
+
+	if (!current_group.empty()) {
+		PropertyInfo reset_pi;
+		reset_pi.usage = PROPERTY_USAGE_GROUP;
+		reset_pi.name = "";
+		p_param_list->push_back(reset_pi);
 	}
 }
 
@@ -2619,6 +2791,104 @@ void RasterizerStorageGLES3::material_set_param(RID p_material, const StringName
 	Material *material = material_owner.get(p_material);
 	ERR_FAIL_COND(!material);
 
+	String param_str = p_param;
+	int slash_pos = param_str.find("/");
+	if (slash_pos != -1) {
+		StringName base_param = param_str.substr(0, slash_pos);
+
+		if (material->shader && material->shader->uniforms.has(base_param) && material->shader->uniforms[base_param].type == ShaderLanguage::TYPE_STRUCT) {
+			const ShaderLanguage::ShaderNode::Uniform &uniform = material->shader->uniforms[base_param];
+			if (material->shader->structs.has(uniform.struct_name)) {
+				const ShaderLanguage::ShaderNode::Struct &st = material->shader->structs[uniform.struct_name];
+				Vector<String> parts = param_str.split("/");
+				String member_name;
+				int array_index = -1;
+				StringName array_param;
+
+				if (uniform.array_size > 0) {
+					if (parts.size() >= 3) {
+						member_name = parts[2];
+					}
+					if (parts.size() >= 4) {
+						array_index = parts[3].to_int();
+						array_param = String(parts[0] + "/" + parts[1] + "/" + parts[2]);
+					}
+				} else {
+					if (parts.size() >= 2) {
+						member_name = parts[1];
+					}
+					if (parts.size() >= 3) {
+						array_index = parts[2].to_int();
+						array_param = String(parts[0] + "/" + parts[1]);
+					}
+				}
+
+				if (array_index >= 0) {
+					for (int i = 0; i < st.members.size(); i++) {
+						if (String(st.members[i].name) == member_name) {
+							if (st.members[i].array_size > 0 && (st.members[i].type == ShaderLanguage::TYPE_VEC3 || st.members[i].type == ShaderLanguage::TYPE_VEC4)) {
+								Array arr;
+								if (material->params.has(array_param) && material->params[array_param].get_type() == Variant::ARRAY) {
+									arr = material->params[array_param];
+								} else {
+									arr.resize(st.members[i].array_size);
+									for (int a = 0; a < st.members[i].array_size; a++) {
+										arr[a] = (st.members[i].type == ShaderLanguage::TYPE_VEC3) ? Variant(Vector3()) : Variant(Plane());
+									}
+								}
+
+								if (array_index >= 0 && array_index < arr.size()) {
+									if (p_value.get_type() == Variant::NIL) {
+										arr[array_index] = material_get_param_default(p_material, p_param);
+									} else {
+										arr[array_index] = p_value;
+									}
+									material->params[array_param] = arr;
+									_material_make_dirty(material);
+								}
+								return;
+							}
+							break;
+						}
+					}
+				}
+			}
+
+			if (p_value.get_type() == Variant::NIL) {
+				material->params.erase(p_param);
+			} else {
+				material->params[p_param] = p_value;
+			}
+			_material_make_dirty(material);
+			return;
+		}
+
+		int index = param_str.substr(slash_pos + 1, param_str.length()).to_int();
+
+		Array arr;
+		if (material->params.has(base_param) && material->params[base_param].get_type() == Variant::ARRAY) {
+			arr = material->params[base_param];
+		} else if (material->shader && material->shader->uniforms.has(base_param)) {
+			Variant def = material_get_param_default(p_material, base_param);
+			if (def.get_type() == Variant::ARRAY) {
+				arr = def;
+			} else {
+				arr.resize(material->shader->uniforms[base_param].array_size);
+			}
+		}
+
+		if (index >= 0 && index < arr.size()) {
+			if (p_value.get_type() == Variant::NIL) {
+				arr[index] = material_get_param_default(p_material, p_param);
+			} else {
+				arr[index] = p_value;
+			}
+			material->params[base_param] = arr;
+			_material_make_dirty(material);
+		}
+		return;
+	}
+
 	if (p_value.get_type() == Variant::NIL) {
 		material->params.erase(p_param);
 	} else {
@@ -2627,9 +2897,72 @@ void RasterizerStorageGLES3::material_set_param(RID p_material, const StringName
 
 	_material_make_dirty(material);
 }
+
 Variant RasterizerStorageGLES3::material_get_param(RID p_material, const StringName &p_param) const {
 	const Material *material = material_owner.get(p_material);
 	ERR_FAIL_COND_V(!material, Variant());
+
+	String param_str = p_param;
+	int slash_pos = param_str.find("/");
+	if (slash_pos != -1) {
+		if (material->params.has(p_param)) {
+			return material->params[p_param];
+		}
+
+		StringName base_param = param_str.substr(0, slash_pos);
+		if (material->shader && material->shader->uniforms.has(base_param) && material->shader->uniforms[base_param].type == ShaderLanguage::TYPE_STRUCT) {
+			const ShaderLanguage::ShaderNode::Uniform &uniform = material->shader->uniforms[base_param];
+			if (material->shader->structs.has(uniform.struct_name)) {
+				Vector<String> parts = param_str.split("/");
+				int array_index = -1;
+				StringName array_param;
+
+				if (uniform.array_size > 0) {
+					if (parts.size() >= 4) {
+						array_index = parts[3].to_int();
+						array_param = String(parts[0] + "/" + parts[1] + "/" + parts[2]);
+					}
+				} else {
+					if (parts.size() >= 3) {
+						array_index = parts[2].to_int();
+						array_param = String(parts[0] + "/" + parts[1]);
+					}
+				}
+
+				if (array_index >= 0 && material->params.has(array_param)) {
+					if (material->params[array_param].get_type() == Variant::ARRAY) {
+						Array arr = material->params[array_param];
+						if (array_index >= 0 && array_index < arr.size() && arr[array_index].get_type() != Variant::NIL) {
+							return arr[array_index];
+						}
+					}
+				}
+			}
+			return material_get_param_default(p_material, p_param);
+		}
+
+		int index = param_str.substr(slash_pos + 1, param_str.length()).to_int();
+
+		if (material->params.has(base_param)) {
+			if (material->params[base_param].get_type() == Variant::ARRAY) {
+				Array arr = material->params[base_param];
+				if (index >= 0 && index < arr.size() && arr[index].get_type() != Variant::NIL) {
+					return arr[index];
+				}
+			} else if (material->params[base_param].get_type() == Variant::POOL_VECTOR3_ARRAY) {
+				PoolVector3Array arr = material->params[base_param];
+				if (index >= 0 && index < arr.size()) {
+					return arr[index];
+				}
+			} else if (material->params[base_param].get_type() == Variant::POOL_COLOR_ARRAY) {
+				PoolColorArray arr = material->params[base_param];
+				if (index >= 0 && index < arr.size()) {
+					return arr[index];
+				}
+			}
+		}
+		return material_get_param_default(p_material, p_param);
+	}
 
 	if (material->params.has(p_param)) {
 		return material->params[p_param];
@@ -2643,8 +2976,147 @@ Variant RasterizerStorageGLES3::material_get_param_default(RID p_material, const
 	ERR_FAIL_COND_V(!material, Variant());
 
 	if (material->shader) {
+		String param_str = p_param;
+		int slash_pos = param_str.find("/");
+		if (slash_pos != -1) {
+			StringName base_param = param_str.substr(0, slash_pos);
+
+			if (material->shader->uniforms.has(base_param) && material->shader->uniforms[base_param].type == ShaderLanguage::TYPE_STRUCT) {
+				const ShaderLanguage::ShaderNode::Uniform &uniform = material->shader->uniforms[base_param];
+				if (material->shader->structs.has(uniform.struct_name)) {
+					const ShaderLanguage::ShaderNode::Struct &st = material->shader->structs[uniform.struct_name];
+					Vector<String> parts = param_str.split("/");
+					String field_name;
+					int array_index = -1;
+
+					if (uniform.array_size > 0) {
+						if (parts.size() >= 3) {
+							field_name = parts[2];
+						}
+						if (parts.size() >= 4) {
+							array_index = parts[3].to_int();
+						}
+					} else {
+						if (parts.size() >= 2) {
+							field_name = parts[1];
+						}
+						if (parts.size() >= 3) {
+							array_index = parts[2].to_int();
+						}
+					}
+
+					for (int i = 0; i < st.members.size(); i++) {
+						const ShaderLanguage::ShaderNode::Struct::Member &mem = st.members[i];
+						if (String(mem.name) == field_name) {
+							if (mem.array_size > 0) {
+								if (array_index >= 0) {
+									if (mem.type == ShaderLanguage::TYPE_VEC3) {
+										return Vector3();
+									} else if (mem.type == ShaderLanguage::TYPE_VEC4) {
+										return Plane();
+									}
+								}
+								Array arr;
+								arr.resize(mem.array_size);
+								for (int j = 0; j < mem.array_size; j++) {
+									switch (mem.type) {
+										case ShaderLanguage::TYPE_BOOL: arr[j] = false; break;
+										case ShaderLanguage::TYPE_INT:
+										case ShaderLanguage::TYPE_UINT: arr[j] = 0; break;
+										case ShaderLanguage::TYPE_FLOAT: arr[j] = 0.0f; break;
+										case ShaderLanguage::TYPE_VEC2: arr[j] = Vector2(); break;
+										case ShaderLanguage::TYPE_VEC3: arr[j] = Vector3(); break;
+										case ShaderLanguage::TYPE_VEC4: arr[j] = Plane(); break;
+										case ShaderLanguage::TYPE_MAT2: arr[j] = Transform2D(); break;
+										case ShaderLanguage::TYPE_MAT3: arr[j] = Basis(); break;
+										case ShaderLanguage::TYPE_MAT4: arr[j] = Transform(); break;
+										default: break;
+									}
+								}
+								return arr;
+							} else {
+								switch (mem.type) {
+									case ShaderLanguage::TYPE_BOOL: return false;
+									case ShaderLanguage::TYPE_INT:
+									case ShaderLanguage::TYPE_UINT: return 0;
+									case ShaderLanguage::TYPE_FLOAT: return 0.0f;
+									case ShaderLanguage::TYPE_VEC2: return Vector2();
+									case ShaderLanguage::TYPE_VEC3: return Vector3();
+									case ShaderLanguage::TYPE_VEC4: return Plane();
+									case ShaderLanguage::TYPE_MAT2: return Transform2D();
+									case ShaderLanguage::TYPE_MAT3: return Basis();
+									case ShaderLanguage::TYPE_MAT4: return Transform();
+									default: return Variant();
+								}
+							}
+						}
+					}
+				}
+				return Variant();
+			}
+
+			int index = param_str.substr(slash_pos + 1, param_str.length()).to_int();
+			if (material->shader->uniforms.has(base_param)) {
+				ShaderLanguage::ShaderNode::Uniform uniform = material->shader->uniforms[base_param];
+				if (uniform.type == ShaderLanguage::TYPE_VEC3) {
+					if (uniform.default_value.size() >= (index + 1) * 3) {
+						return Vector3(uniform.default_value[index * 3].real, uniform.default_value[index * 3 + 1].real, uniform.default_value[index * 3 + 2].real);
+					}
+					return Vector3();
+				} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
+					if (uniform.default_value.size() >= (index + 1) * 4) {
+						float r = uniform.default_value[index * 4].real;
+						float g = uniform.default_value[index * 4 + 1].real;
+						float b = uniform.default_value[index * 4 + 2].real;
+						float a = uniform.default_value[index * 4 + 3].real;
+						if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+							return Color(r, g, b, a);
+						} else {
+							return Plane(r, g, b, a);
+						}
+					}
+					if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+						return Color(0, 0, 0, 1);
+					} else {
+						return Plane();
+					}
+				}
+			}
+			return Variant();
+		}
+
 		if (material->shader->uniforms.has(p_param)) {
 			ShaderLanguage::ShaderNode::Uniform uniform = material->shader->uniforms[p_param];
+			if (uniform.array_size > 0) {
+				Array arr;
+				arr.resize(uniform.array_size);
+				for (int i = 0; i < uniform.array_size; i++) {
+					if (uniform.type == ShaderLanguage::TYPE_VEC3) {
+						if (uniform.default_value.size() >= (i + 1) * 3) {
+							arr[i] = Vector3(uniform.default_value[i * 3].real, uniform.default_value[i * 3 + 1].real, uniform.default_value[i * 3 + 2].real);
+						} else {
+							arr[i] = Vector3();
+						}
+					} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
+						if (uniform.default_value.size() >= (i + 1) * 4) {
+							float r = uniform.default_value[i * 4].real;
+							float g = uniform.default_value[i * 4 + 1].real;
+							float b = uniform.default_value[i * 4 + 2].real;
+							float a = uniform.default_value[i * 4 + 3].real;
+							if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+								arr[i] = Color(r, g, b, a);
+							} else {
+								arr[i] = Plane(r, g, b, a);
+							}
+						} else if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+							arr[i] = Color(0, 0, 0, 1);
+						} else {
+							arr[i] = Plane();
+						}
+					}
+				}
+				return arr;
+			}
 			Vector<ShaderLanguage::ConstantNode::Value> default_value = uniform.default_value;
 			return ShaderLanguage::constant_value_to_variant(default_value, uniform.type, uniform.hint);
 		}
@@ -3204,6 +3676,88 @@ _FORCE_INLINE_ static void _fill_std140_ubo_empty(ShaderLanguage::DataType type,
 	}
 }
 
+
+_FORCE_INLINE_ static void _fill_std140_array_ubo_value(ShaderLanguage::DataType type, int array_size, const Variant &value, uint8_t *data, bool p_linear_color) {
+	memset(data, 0, 16 * array_size);
+
+	if (type == ShaderLanguage::TYPE_VEC3) {
+		if (value.get_type() == Variant::ARRAY) {
+			Array arr = value;
+			int count = MIN(arr.size(), array_size);
+			for (int i = 0; i < count; i++) {
+				Vector3 v = arr[i];
+				GLfloat *elem = (GLfloat *)(data + i * 16);
+				elem[0] = v.x;
+				elem[1] = v.y;
+				elem[2] = v.z;
+			}
+		} else if (value.get_type() == Variant::POOL_VECTOR3_ARRAY) {
+			PoolVector3Array arr = value;
+			int count = MIN(arr.size(), array_size);
+			PoolVector3Array::Read r = arr.read();
+			for (int i = 0; i < count; i++) {
+				Vector3 v = r[i];
+				GLfloat *elem = (GLfloat *)(data + i * 16);
+				elem[0] = v.x;
+				elem[1] = v.y;
+				elem[2] = v.z;
+			}
+		}
+	} else if (type == ShaderLanguage::TYPE_VEC4) {
+		if (value.get_type() == Variant::ARRAY) {
+			Array arr = value;
+			int count = MIN(arr.size(), array_size);
+			for (int i = 0; i < count; i++) {
+				GLfloat *elem = (GLfloat *)(data + i * 16);
+				Variant elem_var = arr[i];
+				if (elem_var.get_type() == Variant::COLOR) {
+					Color c = elem_var;
+					if (p_linear_color) {
+						c = c.to_linear();
+					}
+					elem[0] = c.r;
+					elem[1] = c.g;
+					elem[2] = c.b;
+					elem[3] = c.a;
+				} else if (elem_var.get_type() == Variant::QUAT) {
+					Quat q = elem_var;
+					elem[0] = q.x;
+					elem[1] = q.y;
+					elem[2] = q.z;
+					elem[3] = q.w;
+				} else if (elem_var.get_type() == Variant::RECT2) {
+					Rect2 r = elem_var;
+					elem[0] = r.position.x;
+					elem[1] = r.position.y;
+					elem[2] = r.size.x;
+					elem[3] = r.size.y;
+				} else {
+					Plane p = elem_var;
+					elem[0] = p.normal.x;
+					elem[1] = p.normal.y;
+					elem[2] = p.normal.z;
+					elem[3] = p.d;
+				}
+			}
+		} else if (value.get_type() == Variant::POOL_COLOR_ARRAY) {
+			PoolColorArray arr = value;
+			int count = MIN(arr.size(), array_size);
+			PoolColorArray::Read r = arr.read();
+			for (int i = 0; i < count; i++) {
+				Color c = r[i];
+				if (p_linear_color) {
+					c = c.to_linear();
+				}
+				GLfloat *elem = (GLfloat *)(data + i * 16);
+				elem[0] = c.r;
+				elem[1] = c.g;
+				elem[2] = c.b;
+				elem[3] = c.a;
+			}
+		}
+	}
+}
+
 void RasterizerStorageGLES3::_update_material(Material *material) {
 	if (material->dirty_list.in_list()) {
 		_material_dirty_list.remove(&material->dirty_list);
@@ -3274,10 +3828,12 @@ void RasterizerStorageGLES3::_update_material(Material *material) {
 	//fill up the UBO if it needs to be filled
 	if (material->shader && material->ubo_size) {
 		uint8_t *local_ubo = (uint8_t *)alloca(material->ubo_size);
+		memset(local_ubo, 0, material->ubo_size);
+
 
 		for (Map<StringName, ShaderLanguage::ShaderNode::Uniform>::Element *E = material->shader->uniforms.front(); E; E = E->next()) {
-			if (E->get().order < 0) {
-				continue; // texture, does not go here
+			if (E->get().order < 0 || E->get().order >= material->shader->ubo_offsets.size()) {
+				continue; // texture or invalid order, does not go here
 			}
 
 			//regular uniform
@@ -3285,7 +3841,207 @@ void RasterizerStorageGLES3::_update_material(Material *material) {
 
 			Map<StringName, Variant>::Element *V = material->params.find(E->key());
 
-			if (V) {
+			if (E->get().type == ShaderLanguage::TYPE_STRUCT && material->shader->structs.has(E->get().struct_name)) {
+				struct Std140Helper {
+					static int get_align(ShaderLanguage::DataType p_type, const StringName &p_struct_name, const Map<StringName, ShaderLanguage::ShaderNode::Struct> &p_structs) {
+						if (p_type == ShaderLanguage::TYPE_STRUCT) {
+							int max_align = 16; // std140 rule 9: structs round up to vec4 boundary (16 bytes)
+							if (p_structs.has(p_struct_name)) {
+								const ShaderLanguage::ShaderNode::Struct &st = p_structs[p_struct_name];
+								for (int i = 0; i < st.members.size(); i++) {
+									int m_align = get_align(st.members[i].type, st.members[i].struct_name, p_structs);
+									if (st.members[i].array_size > 0) m_align = 16;
+									max_align = MAX(max_align, m_align);
+								}
+							}
+							return max_align;
+						}
+
+						switch (p_type) {
+							case ShaderLanguage::TYPE_VOID: return 0;
+							case ShaderLanguage::TYPE_BOOL:
+							case ShaderLanguage::TYPE_INT:
+							case ShaderLanguage::TYPE_UINT:
+							case ShaderLanguage::TYPE_FLOAT: return 4;
+							case ShaderLanguage::TYPE_BVEC2:
+							case ShaderLanguage::TYPE_IVEC2:
+							case ShaderLanguage::TYPE_UVEC2:
+							case ShaderLanguage::TYPE_VEC2: return 8;
+							case ShaderLanguage::TYPE_BVEC3:
+							case ShaderLanguage::TYPE_IVEC3:
+							case ShaderLanguage::TYPE_UVEC3:
+							case ShaderLanguage::TYPE_VEC3: return 16;
+							case ShaderLanguage::TYPE_BVEC4:
+							case ShaderLanguage::TYPE_IVEC4:
+							case ShaderLanguage::TYPE_UVEC4:
+							case ShaderLanguage::TYPE_VEC4: return 16;
+							case ShaderLanguage::TYPE_MAT2: return 16;
+							case ShaderLanguage::TYPE_MAT3: return 16;
+							case ShaderLanguage::TYPE_MAT4: return 16;
+							default: return 0;
+						}
+					}
+
+					static int get_size(ShaderLanguage::DataType p_type, const StringName &p_struct_name, const Map<StringName, ShaderLanguage::ShaderNode::Struct> &p_structs) {
+						if (p_type == ShaderLanguage::TYPE_STRUCT) {
+							int size = 0;
+							int align = get_align(p_type, p_struct_name, p_structs);
+							if (p_structs.has(p_struct_name)) {
+								const ShaderLanguage::ShaderNode::Struct &st = p_structs[p_struct_name];
+								for (int i = 0; i < st.members.size(); i++) {
+									int m_size = get_size(st.members[i].type, st.members[i].struct_name, p_structs);
+									int m_align = get_align(st.members[i].type, st.members[i].struct_name, p_structs);
+									if (st.members[i].array_size > 0) {
+										m_size = 16 * st.members[i].array_size;
+										m_align = 16;
+									}
+									size = (size + m_align - 1) & ~(m_align - 1);
+									size += m_size;
+								}
+							}
+							size = (size + align - 1) & ~(align - 1);
+							return size;
+						}
+
+						switch (p_type) {
+							case ShaderLanguage::TYPE_VOID: return 0;
+							case ShaderLanguage::TYPE_BOOL:
+							case ShaderLanguage::TYPE_INT:
+							case ShaderLanguage::TYPE_UINT:
+							case ShaderLanguage::TYPE_FLOAT: return 4;
+							case ShaderLanguage::TYPE_BVEC2:
+							case ShaderLanguage::TYPE_IVEC2:
+							case ShaderLanguage::TYPE_UVEC2:
+							case ShaderLanguage::TYPE_VEC2: return 8;
+							case ShaderLanguage::TYPE_BVEC3:
+							case ShaderLanguage::TYPE_IVEC3:
+							case ShaderLanguage::TYPE_UVEC3:
+							case ShaderLanguage::TYPE_VEC3: return 12;
+							case ShaderLanguage::TYPE_BVEC4:
+							case ShaderLanguage::TYPE_IVEC4:
+							case ShaderLanguage::TYPE_UVEC4:
+							case ShaderLanguage::TYPE_VEC4: return 16;
+							case ShaderLanguage::TYPE_MAT2: return 32;
+							case ShaderLanguage::TYPE_MAT3: return 48;
+							case ShaderLanguage::TYPE_MAT4: return 64;
+							default: return 0;
+						}
+					}
+
+					static void pack(uint8_t *p_dst, const String &p_path, ShaderLanguage::DataType p_type, const StringName &p_struct_name, int p_array_size, Material *p_material) {
+						if (p_type == ShaderLanguage::TYPE_STRUCT && p_material->shader->structs.has(p_struct_name)) {
+							const ShaderLanguage::ShaderNode::Struct &st = p_material->shader->structs[p_struct_name];
+							int count = p_array_size > 0 ? p_array_size : 1;
+							int struct_align = get_align(p_type, p_struct_name, p_material->shader->structs);
+
+							uint8_t *curr_ptr = p_dst;
+							for (int idx = 0; idx < count; idx++) {
+								uint8_t *elem_base = curr_ptr;
+								int offset_in_struct = 0;
+
+								for (int i = 0; i < st.members.size(); i++) {
+									const ShaderLanguage::ShaderNode::Struct::Member &mem = st.members[i];
+									int m_size = get_size(mem.type, mem.struct_name, p_material->shader->structs);
+									int m_align = get_align(mem.type, mem.struct_name, p_material->shader->structs);
+
+									if (mem.array_size > 0) {
+										m_size = 16 * mem.array_size;
+										m_align = 16;
+									}
+
+									offset_in_struct = (offset_in_struct + m_align - 1) & ~(m_align - 1);
+									uint8_t *field_dst = elem_base + offset_in_struct;
+
+									String param_name = p_path + (p_array_size > 0 ? "/" + itos(idx) : "") + "/" + String(mem.name);
+
+									if (mem.type == ShaderLanguage::TYPE_STRUCT) {
+										pack(field_dst, param_name, mem.type, mem.struct_name, mem.array_size, p_material);
+									} else {
+										Map<StringName, Variant>::Element *param_val = p_material->params.find(param_name);
+										if (mem.array_size > 0) {
+											if (param_val && (param_val->get().get_type() == Variant::ARRAY || param_val->get().get_type() == Variant::POOL_VECTOR3_ARRAY || param_val->get().get_type() == Variant::POOL_COLOR_ARRAY)) {
+												_fill_std140_array_ubo_value(mem.type, mem.array_size, param_val->get(), field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
+											} else {
+												Array arr;
+												arr.resize(mem.array_size);
+												bool found = false;
+												for (int a = 0; a < mem.array_size; a++) {
+													String elem_name = param_name + "/" + itos(a);
+													Map<StringName, Variant>::Element *elem_val = p_material->params.find(elem_name);
+													if (elem_val) {
+														arr[a] = elem_val->get();
+														found = true;
+													} else {
+														arr[a] = (mem.type == ShaderLanguage::TYPE_VEC3) ? Variant(Vector3()) : Variant(Plane());
+													}
+												}
+												if (found) {
+													_fill_std140_array_ubo_value(mem.type, mem.array_size, arr, field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
+												} else {
+													memset(field_dst, 0, 16 * mem.array_size);
+												}
+											}
+										} else if (param_val) {
+											_fill_std140_variant_ubo_value(mem.type, param_val->get(), field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
+										} else {
+											_fill_std140_ubo_empty(mem.type, field_dst);
+										}
+									}
+									offset_in_struct += m_size;
+								}
+								offset_in_struct = (offset_in_struct + struct_align - 1) & ~(struct_align - 1);
+								curr_ptr += offset_in_struct;
+							}
+						}
+					}
+				};
+
+				Std140Helper::pack(data, String(E->key()), E->get().type, E->get().struct_name, E->get().array_size, material);
+			} else if (E->get().array_size > 0) {
+				if (V) {
+					_fill_std140_array_ubo_value(E->get().type, E->get().array_size, V->get(), data, material->shader->mode == VS::SHADER_SPATIAL);
+				} else if (E->get().default_value.size() > 0) {
+					memset(data, 0, 16 * E->get().array_size);
+					int count = E->get().array_size;
+					if (E->get().type == ShaderLanguage::TYPE_VEC3) {
+						for (int i = 0; i < count; i++) {
+							if (E->get().default_value.size() >= (i + 1) * 3) {
+								GLfloat *elem = (GLfloat *)(data + i * 16);
+								elem[0] = E->get().default_value[i * 3].real;
+								elem[1] = E->get().default_value[i * 3 + 1].real;
+								elem[2] = E->get().default_value[i * 3 + 2].real;
+							}
+						}
+					} else if (E->get().type == ShaderLanguage::TYPE_VEC4) {
+						bool is_color = (E->get().hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR);
+						bool linear = is_color && (material->shader->mode == VS::SHADER_SPATIAL);
+						for (int i = 0; i < count; i++) {
+							if (E->get().default_value.size() >= (i + 1) * 4) {
+								GLfloat *elem = (GLfloat *)(data + i * 16);
+								float r = E->get().default_value[i * 4].real;
+								float g = E->get().default_value[i * 4 + 1].real;
+								float b = E->get().default_value[i * 4 + 2].real;
+								float a = E->get().default_value[i * 4 + 3].real;
+								if (linear) {
+									Color c(r, g, b, a);
+									c = c.to_linear();
+									elem[0] = c.r;
+									elem[1] = c.g;
+									elem[2] = c.b;
+									elem[3] = c.a;
+								} else {
+									elem[0] = r;
+									elem[1] = g;
+									elem[2] = b;
+									elem[3] = a;
+								}
+							}
+						}
+					}
+				} else {
+					memset(data, 0, 16 * E->get().array_size);
+				}
+			} else if (V) {
 				//user provided
 				_fill_std140_variant_ubo_value(E->get().type, V->get(), data, material->shader->mode == VS::SHADER_SPATIAL);
 

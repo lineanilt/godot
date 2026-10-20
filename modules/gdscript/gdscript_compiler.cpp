@@ -1904,6 +1904,7 @@ Error GDScriptCompiler::_parse_class_level(GDScript *p_script, const GDScriptPar
 	p_script->member_functions.clear();
 	p_script->member_indices.clear();
 	p_script->member_info.clear();
+	p_script->members_order.clear();
 	p_script->_signals.clear();
 	p_script->initializer = nullptr;
 
@@ -1951,6 +1952,17 @@ Error GDScriptCompiler::_parse_class_level(GDScript *p_script, const GDScriptPar
 
 		GDScript::MemberInfo minfo;
 		minfo.index = p_script->member_indices.size();
+
+		if (p_class->variables[i]._export.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_CATEGORY)) {
+			p_script->member_info[name] = p_class->variables[i]._export;
+			p_script->members_order.push_back(p_class->variables[i]._export);
+			p_script->member_indices[name] = minfo;
+#ifdef TOOLS_ENABLED
+			p_script->member_lines[name] = p_class->variables[i].line;
+#endif
+			continue;
+		}
+
 		minfo.setter = p_class->variables[i].setter;
 		minfo.getter = p_class->variables[i].getter;
 		minfo.rpc_mode = p_class->variables[i].rpc_mode;
@@ -1978,6 +1990,7 @@ Error GDScriptCompiler::_parse_class_level(GDScript *p_script, const GDScriptPar
 		}
 
 		p_script->member_info[name] = prop_info;
+		p_script->members_order.push_back(prop_info);
 		p_script->member_indices[name] = minfo;
 		p_script->members.insert(name);
 

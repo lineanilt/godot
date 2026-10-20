@@ -106,7 +106,6 @@ uint32_t Light::get_cull_mask() const {
 	return cull_mask;
 }
 
-
 void Light::set_shadow_cull_mask(uint32_t p_mask) {
 	shadow_cull_mask = p_mask;
 	VS::get_singleton()->light_set_shadow_cull_mask(light, p_mask);
@@ -490,7 +489,6 @@ void Light::_bind_methods() {
 	BIND_ENUM_CONSTANT(BAKE_ALL);
 }
 
-
 void Light::set_square_shape(bool p_enable) {
 	set_param(PARAM_SQUARE_SHAPE, p_enable ? 1.0 : 0.0);
 }
@@ -724,7 +722,6 @@ void DirectionalLight::_validate_property(PropertyInfo &property) const {
 	Light::_validate_property(property);
 }
 
-
 void DirectionalLight::set_projector_mode(ProjectorMode p_mode) {
 	projector_mode = p_mode;
 	VS::get_singleton()->light_directional_set_projector_mode(light, VisualServer::LightDirectionalProjectorMode(p_mode));
@@ -744,7 +741,6 @@ void DirectionalLight::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_blend_splits", "enabled"), &DirectionalLight::set_blend_splits);
 	ClassDB::bind_method(D_METHOD("is_blend_splits_enabled"), &DirectionalLight::is_blend_splits_enabled);
 
-
 	ClassDB::bind_method(D_METHOD("set_projector_mode", "mode"), &DirectionalLight::set_projector_mode);
 	ClassDB::bind_method(D_METHOD("get_projector_mode"), &DirectionalLight::get_projector_mode);
 
@@ -752,7 +748,6 @@ void DirectionalLight::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_projector_mode", PROPERTY_HINT_ENUM, "Repeat,Follow View"), "set_projector_mode", "get_projector_mode");
 	BIND_ENUM_CONSTANT(PROJECTOR_MODE_REPEAT);
 	BIND_ENUM_CONSTANT(PROJECTOR_MODE_FOLLOW_VIEW);
-
 
 	ADD_GROUP("Directional Shadow", "directional_shadow_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_shadow_mode", PROPERTY_HINT_ENUM, "Orthogonal (Fast),PSSM 2 Splits (Average),PSSM 3 Splits (Slow),PSSM 4 Splits (Very Slow)"), "set_shadow_mode", "get_shadow_mode");
@@ -762,7 +757,7 @@ void DirectionalLight::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "directional_shadow_blend_splits"), "set_blend_splits", "is_blend_splits_enabled");
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_fade_start", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param", "get_param", PARAM_SHADOW_FADE_START);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_normal_bias", PROPERTY_HINT_RANGE, "-10,10,0.001"), "set_param", "get_param", PARAM_SHADOW_NORMAL_BIAS);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_bias_split_scale", PROPERTY_HINT_RANGE, "0,1,0.001"), "set_param", "get_param", PARAM_SHADOW_BIAS_SPLIT_SCALE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_bias_split_scale", PROPERTY_HINT_RANGE, "0,2,0.001"), "set_param", "get_param", PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "directional_shadow_depth_range", PROPERTY_HINT_ENUM, "Stable,Optimized"), "set_shadow_depth_range", "get_shadow_depth_range");
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "directional_shadow_max_distance", PROPERTY_HINT_EXP_RANGE, "0,8192,0.1,or_greater"), "set_param", "get_param", PARAM_SHADOW_MAX_DISTANCE);
 

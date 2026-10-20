@@ -435,7 +435,6 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 			r_gen_code.defines.push_back(max_capsules_string.utf8());
 
 			// structs
-
 			for (int i = 0; i < pnode->vstructs.size(); i++) {
 				SL::StructNode *st = pnode->vstructs[i].shader_struct;
 				String struct_code;
@@ -449,7 +448,7 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 					if (m->datatype == SL::TYPE_STRUCT) {
 						struct_code += _mkid(m->struct_name);
 					} else {
-						struct_code += _prestr(m->precision);
+						struct_code += (m->precision == SL::PRECISION_DEFAULT) ? "highp " : _prestr(m->precision);
 						struct_code += _typestr(m->datatype);
 					}
 					struct_code += " ";
@@ -464,8 +463,7 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 				struct_code += "}";
 				struct_code += ";\n";
 
-				r_gen_code.vertex_global += struct_code;
-				r_gen_code.fragment_global += struct_code;
+				r_gen_code.defines.push_back(struct_code.utf8());
 			}
 
 			int max_texture_uniforms = 0;
@@ -499,8 +497,15 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 				}
 
 				ucode += _prestr(E.get().precision);
-				ucode += _typestr(E.get().type);
+				if (E.get().type == SL::TYPE_STRUCT) {
+					ucode += _mkid(E.get().struct_name);
+				} else {
+					ucode += _typestr(E.get().type);
+				}
 				ucode += " " + _mkid(E.key());
+				if (E.get().array_size > 0) {
+					ucode += "[" + itos(E.get().array_size) + "]";
+				}
 				ucode += ";\n";
 				if (SL::is_sampler_type(E.get().type)) {
 					r_gen_code.vertex_global += ucode;
@@ -514,8 +519,111 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 						uses_uniforms = true;
 					}
 					uniform_defines.write[E.get().order] = ucode;
-					uniform_sizes.write[E.get().order] = _get_datatype_size(E.get().type);
-					uniform_alignments.write[E.get().order] = _get_datatype_alignment(E.get().type);
+
+					if (E.get().type == SL::TYPE_STRUCT && shader->structs.has(E.get().struct_name)) {
+						struct CompilerStd140 {
+							static int get_align(SL::DataType p_type, const StringName &p_name, const Map<StringName, SL::ShaderNode::Struct> &p_structs) {
+								if (p_type == SL::TYPE_STRUCT) {
+									int max_align = 16;
+									if (p_structs.has(p_name) && p_structs[p_name].shader_struct) {
+										const SL::StructNode *st = p_structs[p_name].shader_struct;
+										for (int j = 0; j < st->members.size(); j++) {
+											int a = get_align(st->members[j]->datatype, st->members[j]->struct_name, p_structs);
+											if (st->members[j]->array_size > 0) a = 16;
+											max_align = MAX(max_align, a);
+										}
+									}
+									return max_align;
+								}
+								switch (p_type) {
+									case SL::TYPE_VOID: return 0;
+									case SL::TYPE_BOOL:
+									case SL::TYPE_INT:
+									case SL::TYPE_UINT:
+									case SL::TYPE_FLOAT: return 4;
+									case SL::TYPE_BVEC2:
+									case SL::TYPE_IVEC2:
+									case SL::TYPE_UVEC2:
+									case SL::TYPE_VEC2: return 8;
+									case SL::TYPE_BVEC3:
+									case SL::TYPE_IVEC3:
+									case SL::TYPE_UVEC3:
+									case SL::TYPE_VEC3: return 16;
+									case SL::TYPE_BVEC4:
+									case SL::TYPE_IVEC4:
+									case SL::TYPE_UVEC4:
+									case SL::TYPE_VEC4: return 16;
+									case SL::TYPE_MAT2: return 16;
+									case SL::TYPE_MAT3: return 16;
+									case SL::TYPE_MAT4: return 16;
+									default: return 0;
+								}
+							}
+
+							static int get_size(SL::DataType p_type, const StringName &p_name, const Map<StringName, SL::ShaderNode::Struct> &p_structs) {
+								if (p_type == SL::TYPE_STRUCT) {
+									int size = 0;
+									int align = get_align(p_type, p_name, p_structs);
+									if (p_structs.has(p_name) && p_structs[p_name].shader_struct) {
+										const SL::StructNode *st = p_structs[p_name].shader_struct;
+										for (int j = 0; j < st->members.size(); j++) {
+											int s = get_size(st->members[j]->datatype, st->members[j]->struct_name, p_structs);
+											int a = get_align(st->members[j]->datatype, st->members[j]->struct_name, p_structs);
+											if (st->members[j]->array_size > 0) {
+												s = 16 * st->members[j]->array_size;
+												a = 16;
+											}
+											size = (size + a - 1) & ~(a - 1);
+											size += s;
+										}
+									}
+									size = (size + align - 1) & ~(align - 1);
+									return size;
+								}
+								switch (p_type) {
+									case SL::TYPE_VOID: return 0;
+									case SL::TYPE_BOOL:
+									case SL::TYPE_INT:
+									case SL::TYPE_UINT:
+									case SL::TYPE_FLOAT: return 4;
+									case SL::TYPE_BVEC2:
+									case SL::TYPE_IVEC2:
+									case SL::TYPE_UVEC2:
+									case SL::TYPE_VEC2: return 8;
+									case SL::TYPE_BVEC3:
+									case SL::TYPE_IVEC3:
+									case SL::TYPE_UVEC3:
+									case SL::TYPE_VEC3: return 12;
+									case SL::TYPE_BVEC4:
+									case SL::TYPE_IVEC4:
+									case SL::TYPE_UVEC4:
+									case SL::TYPE_VEC4: return 16;
+									case SL::TYPE_MAT2: return 32;
+									case SL::TYPE_MAT3: return 48;
+									case SL::TYPE_MAT4: return 64;
+									default: return 0;
+								}
+							}
+						};
+
+						int struct_align = CompilerStd140::get_align(E.get().type, E.get().struct_name, shader->structs);
+						int struct_size = CompilerStd140::get_size(E.get().type, E.get().struct_name, shader->structs);
+
+						if (E.get().array_size > 0) {
+							uniform_sizes.write[E.get().order] = struct_size * E.get().array_size;
+							uniform_alignments.write[E.get().order] = struct_align;
+						} else {
+							uniform_sizes.write[E.get().order] = struct_size;
+							uniform_alignments.write[E.get().order] = struct_align;
+						}
+					} else if (E.get().array_size > 0) {
+						// std140 rule 4: array stride is aligned to 16 bytes (vec4)
+						uniform_sizes.write[E.get().order] = 16 * E.get().array_size;
+						uniform_alignments.write[E.get().order] = 16;
+					} else {
+						uniform_sizes.write[E.get().order] = _get_datatype_size(E.get().type);
+						uniform_alignments.write[E.get().order] = _get_datatype_alignment(E.get().type);
+					}
 				}
 
 				p_actions.uniforms->insert(E.key(), E.get());
@@ -1109,6 +1217,11 @@ Error ShaderCompilerGLES3::compile(VS::ShaderMode p_mode, const String &p_code, 
 
 	shader = parser.get_shader();
 	function = nullptr;
+
+	if (p_actions && p_actions->structs) {
+		*p_actions->structs = shader->structs;
+	}
+
 	_dump_node_code(shader, 1, r_gen_code, *p_actions, actions[p_mode], false);
 
 	if (r_gen_code.uniform_total_size) { //uniforms used?
@@ -1204,6 +1317,16 @@ ShaderCompilerGLES3::ShaderCompilerGLES3() {
 
 	actions[VS::SHADER_SPATIAL].renames["SHADOWS"] = "shadows";
 	actions[VS::SHADER_SPATIAL].renames["LIGHT_ATTENUATION"] = "light_attenuation";
+	actions[VS::SHADER_SPATIAL].renames["SHADOW_ATLAS"] = "shadow_atlas";
+	actions[VS::SHADER_SPATIAL].renames["DIRECTIONAL_SHADOWMAP"] = "directional_shadow";
+	actions[VS::SHADER_SPATIAL].renames["LIGHT_TYPE"] = "light_type";
+	actions[VS::SHADER_SPATIAL].renames["LIGHT_DIRECTIONAL"] = "LIGHT_DIRECTIONAL";
+	actions[VS::SHADER_SPATIAL].renames["LIGHT_OMNI"] = "LIGHT_OMNI";
+	actions[VS::SHADER_SPATIAL].renames["LIGHT_SPOT"] = "LIGHT_SPOT";
+	actions[VS::SHADER_SPATIAL].renames["SHADOW_COORDS"] = "shadow_coords";
+	actions[VS::SHADER_SPATIAL].renames["PSSM_OFFSET"] = "pssm_offset";
+
+	// actions[VS::SHADER_SPATIAL].renames["texture_shadow"] = "texture_shadow";
 
 	//builtins
 
