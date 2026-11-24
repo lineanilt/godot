@@ -194,8 +194,11 @@ And as for mobile, well, it compiles, but it wouldn't _compile shaders_ due to M
 
 ### Minimum requirements
 **CPU:** Ivy Bridge (2012) or newer; preferably quad-core or higher.
+
 **RAM:** 6GB system RAM, 2GB VRAM.
+
 **GPU:** Intel HD Graphics 2500 (Mesa) or any GPU with GL4.3 support.
+
 **glibc:** 2.35 (Linux)
 
 ## Original README
