@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GLSLShader" inherits="Shader" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A raw GLSL shader resource.
+	</brief_description>
+	<description>
+		Stores raw GLSL source code (such as compute shaders for [GL43Server]) without passing through Godot's shading language compiler. Can be loaded from [code].glsl[/code], [code].comp[/code], [code].vert[/code], or [code].frag[/code] files and edited in the Shader editor panel.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+	</methods>
+	<members>
+		<member name="code" type="String" setter="set_code" getter="get_code" default="&quot;&quot;">
+			The raw GLSL source code.
+		</member>
+	</members>
+	<constants>
+	</constants>
+</class>

@@ -64,13 +64,17 @@ private:
 	virtual void _update_shader() const; //used for visual shader
 protected:
 	static void _bind_methods();
+	void _mark_params_dirty() {
+		params_cache_dirty = true;
+		params_cache.clear();
+	}
 
 public:
 	//void set_mode(Mode p_mode);
 	virtual Mode get_mode() const;
 
-	void set_code(const String &p_code);
-	String get_code() const;
+	virtual void set_code(const String &p_code);
+	virtual String get_code() const;
 
 	void get_param_list(List<PropertyInfo> *p_params) const;
 	bool has_param(const StringName &p_param) const;

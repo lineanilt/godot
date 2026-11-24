@@ -46,6 +46,21 @@
 #include GLES3_INCLUDE_H
 #endif
 
+
+#ifndef GL_KHR_parallel_shader_compile
+#define GL_KHR_parallel_shader_compile 1
+#define GL_MAX_SHADER_COMPILER_THREADS_KHR 0x91B0
+#define GL_COMPLETION_STATUS_KHR 0x91B1
+#endif
+
+#ifndef GL_ARB_parallel_shader_compile
+#define GL_ARB_parallel_shader_compile 1
+#define GL_MAX_SHADER_COMPILER_THREADS_ARB 0x91B0
+#define GL_COMPLETION_STATUS_ARB 0x91B1
+#endif
+
+typedef void (APIENTRY *PFNGLMAXSHADERCOMPILERTHREADSKHRPROC)(GLuint count);
+
 #include <stdio.h>
 
 template <class K>
@@ -130,6 +145,8 @@ public:
 
 	static ThreadedCallableQueue<GLuint> *compile_queue; // Non-null if using queued asynchronous compilation (via secondary context)
 	static bool parallel_compile_supported; // True if using natively supported asyncrhonous compilation
+
+	static PFNGLMAXSHADERCOMPILERTHREADSKHRPROC glMaxShaderCompilerThreadsKHR;
 
 	static bool async_hidden_forbidden;
 	static uint32_t *compiles_started_this_frame;

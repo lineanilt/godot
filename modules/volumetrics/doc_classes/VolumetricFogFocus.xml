@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VolumetricFogFocus" inherits="Spatial" version="3.6">
+	<brief_description>
+		Focuses DirectionalLight depth-texture framing, light priority, and optional density modulation around a target point.
+	</brief_description>
+	<description>
+		When active, [VolumetricFog] anchors its [DirectionalLight] orthographic depth-texture frustum and prioritizes nearby lights and volumes around this node (blended with the camera via [member camera_bias]).
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+	</methods>
+	<constants>
+	</constants>
+</class>

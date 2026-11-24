@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VolumetricFog" inherits="Spatial" version="3.6">
+	<brief_description>
+		Real-time OpenGL 4.3 compute-raymarched volumetric fog supporting depth-texture SpotLights and DirectionalLights, screen-space OmniLights, LocalFogVolumes, and BakedFogVolumes.
+	</brief_description>
+	<description>
+		[VolumetricFog] renders volumetric scattering and absorption using raw OpenGL 4.3 depth rasterization and compute shaders, avoiding 3D spatial shader conflicts. [DirectionalLight]s and [SpotLight]s use pooled raw OpenGL depth-array passes with PCF for shadowed god rays, while [OmniLight]s are evaluated in screen space with optional screen-space depth occlusion.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_fog_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the generated RGBA16F premultiplied-alpha volumetric fog [Texture]. RGB holds tonemapped premultiplied inscatter and A holds opacity ([code]1.0 - transmittance[/code]).
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="albedo" type="Color" setter="set_albedo" getter="get_albedo" default="Color( 0.9, 0.92, 0.95, 1 )">
+		</member>
+		<member name="anisotropy" type="float" setter="set_anisotropy" getter="get_anisotropy" default="0.5">
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			Automatically composites the volumetric fog onto the active viewport on a background 2D canvas layer after all 3D spatial shaders and before 2D UI. Disable if manually sampling [method get_fog_texture].
+		</member>
+		<member name="density" type="float" setter="set_density" getter="get_density" default="0.02">
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+		</member>
+		<member name="light_fog_ratio" type="float" setter="set_light_fog_ratio" getter="get_light_fog_ratio" default="0.0">
+		</member>
+		<member name="max_distance" type="float" setter="set_max_distance" getter="get_max_distance" default="120.0">
+		</member>
+		<member name="resolution_scale" type="float" setter="set_resolution_scale" getter="get_resolution_scale" default="0.5">
+		</member>
+		<member name="spatial_denoise_passes" type="int" setter="set_spatial_denoise_passes" getter="get_spatial_denoise_passes" default="1">
+			Number of edge-aware bilateral spatial denoising passes executed in linear HDR before tonemapping.
+		</member>
+		<member name="steps" type="int" setter="set_steps" getter="get_steps" default="24">
+		</member>
+	</members>
+	<constants>
+		<constant name="STEP_LINEAR" value="0" enum="StepDistribution">
+		</constant>
+		<constant name="STEP_QUADRATIC" value="1" enum="StepDistribution">
+		</constant>
+	</constants>
+</class>

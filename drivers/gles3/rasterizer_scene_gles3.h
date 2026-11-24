@@ -315,6 +315,7 @@ public:
 	void _free_projector_array();
 	void _update_projector_layer(int p_slot, RasterizerStorageGLES3::Texture *p_tex, RID p_texture);
 	int _get_projector_layer(RID p_texture);
+	bool _run_gl43_scene_hooks(int p_stage, const CameraMatrix &p_cam_projection, GLuint p_color_tex_id);
 
 	virtual int get_directional_light_shadow_size(RID p_light_intance);
 	virtual void set_directional_shadow_count(int p_count);
@@ -647,7 +648,7 @@ public:
 		float shadow_temporal_offset;
 
 		float dir_projector_color[4];
-		float dir_projector_params1[4]; // preset, layer, repeat, projector_only
+		float dir_projector_params1[4]; // unused, layer, repeat, projector_only
 		float dir_projector_params2[4]; // scale.xy, offset.xy
 		float dir_projector_params3[4]; // rotation, lod, mode (0=repeat, 1=follow view), unused
 		float dir_projector_matrix[16];
@@ -914,7 +915,7 @@ public:
 
 	void _blur_effect_buffer();
 	void _render_mrts(Environment *env, const CameraMatrix &p_cam_projection);
-	void _post_process(Environment *env, const CameraMatrix &p_cam_projection);
+	void _post_process(Environment *env, const CameraMatrix &p_cam_projection, bool p_skip_buffer_resolve = false);
 
 	void _prepare_depth_texture();
 	void _bind_depth_texture();

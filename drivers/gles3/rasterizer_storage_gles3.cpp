@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "rasterizer_storage_gles3.h"
+#include "shared_gl43_context.h"
 
 #include "core/engine.h"
 #include "core/os/os.h"
@@ -2149,6 +2150,28 @@ void RasterizerStorageGLES3::shader_set_code(RID p_shader, const String &p_code)
 	Shader *shader = shader_owner.get(p_shader);
 	ERR_FAIL_COND(!shader);
 
+	if (p_code.begins_with("//GODOT_RAW_GLSL\n")) {
+		shader->is_raw_glsl = true;
+		shader->code = p_code.substr(17);
+		if (shader->shader && shader->custom_code_id) {
+			shader->shader->free_custom_shader(shader->custom_code_id);
+			shader->custom_code_id = 0;
+		}
+		shader->mode = VS::SHADER_SPATIAL;
+		shader->shader = &scene->state.scene_shader;
+		_shader_make_dirty(shader);
+		return;
+	}
+
+	if (shader->is_raw_glsl) {
+		shader->is_raw_glsl = false;
+		if (shader->raw_program) {
+			glDeleteProgram(shader->raw_program);
+			shader->raw_program = 0;
+		}
+		shader->raw_uniforms.clear();
+	}
+
 	shader->code = p_code;
 
 	String mode_string = ShaderLanguage::get_shader_type(p_code);
@@ -2199,6 +2222,313 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 
 	p_shader->uniforms.clear();
 	p_shader->structs.clear();
+
+	if (p_shader->is_raw_glsl) {
+		p_shader->valid = false;
+		p_shader->raw_uniforms.clear();
+		p_shader->texture_count = 0;
+		p_shader->texture_hints.clear();
+		p_shader->texture_types.clear();
+		p_shader->ubo_offsets.clear();
+		if (p_shader->raw_program) {
+			glDeleteProgram(p_shader->raw_program);
+			p_shader->raw_program = 0;
+		}
+
+		p_shader->spatial.blend_mode = Shader::Spatial::BLEND_MODE_MIX;
+		p_shader->spatial.depth_draw_mode = Shader::Spatial::DEPTH_DRAW_OPAQUE;
+		p_shader->spatial.cull_mode = Shader::Spatial::CULL_MODE_BACK;
+		p_shader->spatial.uses_alpha = false;
+		p_shader->spatial.uses_alpha_scissor = false;
+		p_shader->spatial.uses_discard = p_shader->code.find("discard") != -1;
+		p_shader->spatial.unshaded = true;
+		p_shader->spatial.no_depth_test = false;
+		p_shader->spatial.no_blob_shadows = true;
+		p_shader->spatial.uses_sss = false;
+		p_shader->spatial.uses_time = false;
+		p_shader->spatial.uses_custom_pass = false;
+		p_shader->spatial.uses_custom_texture = false;
+		p_shader->spatial.uses_sln_texture = false;
+		p_shader->spatial.uses_vertex_lighting = false;
+		p_shader->spatial.uses_screen_texture = false;
+		p_shader->spatial.uses_depth_texture = false;
+		p_shader->spatial.uses_vertex = true;
+		p_shader->spatial.uses_tangent = false;
+		p_shader->spatial.uses_ensure_correct_normals = false;
+		p_shader->spatial.writes_modelview_or_projection = false;
+		p_shader->spatial.uses_world_coordinates = false;
+		p_shader->uses_vertex_time = false;
+		p_shader->uses_fragment_time = false;
+
+		if (p_shader->code.strip_edges().empty()) {
+			return;
+		}
+
+		// Parse optional `// render_mode ...` directives and split [vertex] / [fragment]
+		String shared_header;
+		String vert_body;
+		String frag_body;
+		bool has_sections = false;
+		int current_section = 0; // 0 = shared, 1 = vertex, 2 = fragment
+
+		Vector<String> lines = p_shader->code.split("\n");
+		for (int li = 0; li < lines.size(); li++) {
+			String line = lines[li];
+			String trimmed = line.strip_edges();
+
+			if (trimmed == "[vertex]") {
+				has_sections = true;
+				current_section = 1;
+				continue;
+			}
+			if (trimmed == "[fragment]") {
+				has_sections = true;
+				current_section = 2;
+				continue;
+			}
+
+			if (trimmed.begins_with("//")) {
+				String comment = trimmed.substr(2).strip_edges();
+				if (comment.begins_with("render_mode")) {
+					String modes_str = comment.substr(11).strip_edges().trim_suffix(";");
+					Vector<String> modes = modes_str.split(",");
+					for (int mi = 0; mi < modes.size(); mi++) {
+						String m = modes[mi].strip_edges();
+						if (m == "blend_mix") p_shader->spatial.blend_mode = Shader::Spatial::BLEND_MODE_MIX;
+						else if (m == "blend_add") p_shader->spatial.blend_mode = Shader::Spatial::BLEND_MODE_ADD;
+						else if (m == "blend_sub") p_shader->spatial.blend_mode = Shader::Spatial::BLEND_MODE_SUB;
+						else if (m == "blend_mul") p_shader->spatial.blend_mode = Shader::Spatial::BLEND_MODE_MUL;
+						else if (m == "cull_back") p_shader->spatial.cull_mode = Shader::Spatial::CULL_MODE_BACK;
+						else if (m == "cull_front") p_shader->spatial.cull_mode = Shader::Spatial::CULL_MODE_FRONT;
+						else if (m == "cull_disabled") p_shader->spatial.cull_mode = Shader::Spatial::CULL_MODE_DISABLED;
+						else if (m == "depth_draw_opaque") p_shader->spatial.depth_draw_mode = Shader::Spatial::DEPTH_DRAW_OPAQUE;
+						else if (m == "depth_draw_always") p_shader->spatial.depth_draw_mode = Shader::Spatial::DEPTH_DRAW_ALWAYS;
+						else if (m == "depth_draw_never") p_shader->spatial.depth_draw_mode = Shader::Spatial::DEPTH_DRAW_NEVER;
+						else if (m == "depth_test_disable") p_shader->spatial.no_depth_test = true;
+						else if (m == "transparent") p_shader->spatial.uses_alpha = true;
+					}
+				}
+			}
+
+			if (current_section == 0) {
+				shared_header += line + "\n";
+			} else if (current_section == 1) {
+				vert_body += line + "\n";
+			} else {
+				frag_body += line + "\n";
+			}
+		}
+
+		auto prepare_stage_src = [](const String &p_src, const String &p_define) -> String {
+			String ver_line;
+			String rest;
+			Vector<String> src_lines = p_src.split("\n");
+			for (int i = 0; i < src_lines.size(); i++) {
+				String t = src_lines[i].strip_edges();
+				if (t.begins_with("#version")) {
+					if (ver_line.empty()) {
+						ver_line = t + "\n";
+					}
+					continue;
+				}
+				rest += src_lines[i] + "\n";
+			}
+			if (ver_line.empty()) {
+#ifdef GLES_OVER_GL
+				ver_line = "#version 330 core\n";
+#else
+				ver_line = "#version 300 es\nprecision highp float;\n";
+#endif
+			}
+			if (!p_define.empty()) {
+				return ver_line + "#define " + p_define + "\n" + rest;
+			}
+			return ver_line + rest;
+		};
+
+		String vert_src;
+		String frag_src;
+		if (has_sections) {
+			if (vert_body.strip_edges().empty() || frag_body.strip_edges().empty()) {
+				ERR_PRINT("GLSLShader: Both [vertex] and [fragment] sections must be non-empty.");
+				return;
+			}
+			vert_src = prepare_stage_src(shared_header + vert_body, "");
+			frag_src = prepare_stage_src(shared_header + frag_body, "");
+		} else {
+			vert_src = prepare_stage_src(p_shader->code, "VERTEX");
+			frag_src = prepare_stage_src(p_shader->code, "FRAGMENT");
+		}
+
+		auto compile_stage = [](GLenum p_type, const String &p_src, const char *p_label) -> GLuint {
+			CharString utf8 = p_src.utf8();
+			const char *ptr = utf8.get_data();
+			GLuint sh = glCreateShader(p_type);
+			glShaderSource(sh, 1, &ptr, nullptr);
+			glCompileShader(sh);
+			GLint ok = 0;
+			glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+			if (!ok) {
+				char log_buf[4096];
+				glGetShaderInfoLog(sh, sizeof(log_buf), nullptr, log_buf);
+				ERR_PRINT(String("GLSLShader ") + p_label + " compile error:\n" + String::utf8(log_buf));
+				glDeleteShader(sh);
+				return 0;
+			}
+			return sh;
+		};
+
+		GLuint vs = compile_stage(GL_VERTEX_SHADER, vert_src, "vertex");
+		GLuint fs = compile_stage(GL_FRAGMENT_SHADER, frag_src, "fragment");
+		if (!vs || !fs) {
+			if (vs) glDeleteShader(vs);
+			if (fs) glDeleteShader(fs);
+			return;
+		}
+
+		GLuint prog = glCreateProgram();
+		glAttachShader(prog, vs);
+		glAttachShader(prog, fs);
+		glLinkProgram(prog);
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+
+		GLint link_ok = 0;
+		glGetProgramiv(prog, GL_LINK_STATUS, &link_ok);
+		if (!link_ok) {
+			char log_buf[4096];
+			glGetProgramInfoLog(prog, sizeof(log_buf), nullptr, log_buf);
+			ERR_PRINT(String("GLSLShader link error:\n") + String::utf8(log_buf));
+			glDeleteProgram(prog);
+			return;
+		}
+
+		p_shader->raw_program = prog;
+
+		p_shader->raw_builtins.projection_matrix = glGetUniformLocation(prog, "u_projection_matrix");
+		p_shader->raw_builtins.inv_projection_matrix = glGetUniformLocation(prog, "u_inv_projection_matrix");
+		p_shader->raw_builtins.view_matrix = glGetUniformLocation(prog, "u_view_matrix");
+		p_shader->raw_builtins.camera_matrix = glGetUniformLocation(prog, "u_camera_matrix");
+		p_shader->raw_builtins.model_matrix = glGetUniformLocation(prog, "u_model_matrix");
+		p_shader->raw_builtins.mvp_matrix = glGetUniformLocation(prog, "u_mvp_matrix");
+		p_shader->raw_builtins.normal_matrix = glGetUniformLocation(prog, "u_normal_matrix");
+		p_shader->raw_builtins.camera_position = glGetUniformLocation(prog, "u_camera_position");
+		p_shader->raw_builtins.time = glGetUniformLocation(prog, "u_time");
+		p_shader->raw_builtins.viewport_size = glGetUniformLocation(prog, "u_viewport_size");
+
+		if (p_shader->raw_builtins.time >= 0) {
+			p_shader->spatial.uses_time = true;
+			p_shader->uses_vertex_time = true;
+			p_shader->uses_fragment_time = true;
+		}
+
+		GLint active_count = 0;
+		glGetProgramiv(prog, GL_ACTIVE_UNIFORMS, &active_count);
+		int reg_order = 0;
+		int tex_unit = 0;
+
+		for (GLint ui = 0; ui < active_count; ui++) {
+			char name_buf[256];
+			GLsizei len = 0;
+			GLint usize = 0;
+			GLenum utype = 0;
+			glGetActiveUniform(prog, (GLuint)ui, sizeof(name_buf), &len, &usize, &utype, name_buf);
+			String uname = String::utf8(name_buf, len);
+			if (uname.begins_with("gl_")) {
+				continue;
+			}
+			if (uname.ends_with("[0]")) {
+				uname = uname.substr(0, uname.length() - 3);
+			}
+			if (uname == "u_projection_matrix" || uname == "u_inv_projection_matrix" ||
+					uname == "u_view_matrix" || uname == "u_camera_matrix" ||
+					uname == "u_model_matrix" || uname == "u_mvp_matrix" ||
+					uname == "u_normal_matrix" || uname == "u_camera_position" ||
+					uname == "u_time" || uname == "u_viewport_size") {
+				continue;
+			}
+
+			GLint loc = glGetUniformLocation(prog, name_buf);
+			if (loc < 0) {
+				continue;
+			}
+
+			ShaderLanguage::DataType sl_type = ShaderLanguage::TYPE_VOID;
+			bool is_sampler = false;
+			switch (utype) {
+				case GL_BOOL: sl_type = ShaderLanguage::TYPE_BOOL; break;
+				case GL_INT: sl_type = ShaderLanguage::TYPE_INT; break;
+				case GL_UNSIGNED_INT: sl_type = ShaderLanguage::TYPE_UINT; break;
+				case GL_FLOAT: sl_type = ShaderLanguage::TYPE_FLOAT; break;
+				case GL_FLOAT_VEC2: sl_type = ShaderLanguage::TYPE_VEC2; break;
+				case GL_FLOAT_VEC3: sl_type = ShaderLanguage::TYPE_VEC3; break;
+				case GL_FLOAT_VEC4: sl_type = ShaderLanguage::TYPE_VEC4; break;
+				case GL_INT_VEC2: sl_type = ShaderLanguage::TYPE_IVEC2; break;
+				case GL_INT_VEC3: sl_type = ShaderLanguage::TYPE_IVEC3; break;
+				case GL_INT_VEC4: sl_type = ShaderLanguage::TYPE_IVEC4; break;
+				case GL_FLOAT_MAT2: sl_type = ShaderLanguage::TYPE_MAT2; break;
+				case GL_FLOAT_MAT3: sl_type = ShaderLanguage::TYPE_MAT3; break;
+				case GL_FLOAT_MAT4: sl_type = ShaderLanguage::TYPE_MAT4; break;
+				case GL_SAMPLER_2D: sl_type = ShaderLanguage::TYPE_SAMPLER2D; is_sampler = true; break;
+				case GL_SAMPLER_3D: sl_type = ShaderLanguage::TYPE_SAMPLER3D; is_sampler = true; break;
+				case GL_SAMPLER_CUBE: sl_type = ShaderLanguage::TYPE_SAMPLERCUBE; is_sampler = true; break;
+				case GL_SAMPLER_2D_ARRAY: sl_type = ShaderLanguage::TYPE_SAMPLER2DARRAY; is_sampler = true; break;
+				case GL_INT_SAMPLER_2D: sl_type = ShaderLanguage::TYPE_ISAMPLER2D; is_sampler = true; break;
+				case GL_UNSIGNED_INT_SAMPLER_2D: sl_type = ShaderLanguage::TYPE_USAMPLER2D; is_sampler = true; break;
+				default: break;
+			}
+			if (sl_type == ShaderLanguage::TYPE_VOID) {
+				continue;
+			}
+
+			StringName sname(uname);
+			ShaderLanguage::ShaderNode::Uniform su;
+			su.type = sl_type;
+			su.precision = ShaderLanguage::PRECISION_DEFAULT;
+			su.hint = ShaderLanguage::ShaderNode::Uniform::HINT_NONE;
+			if (sl_type == ShaderLanguage::TYPE_VEC4) {
+				String low = uname.to_lower();
+				if (low.find("color") != -1 || low.find("albedo") != -1 || low.find("tint") != -1) {
+					su.hint = ShaderLanguage::ShaderNode::Uniform::HINT_COLOR;
+				}
+			}
+
+			Shader::RawUniform ru;
+			ru.name = sname;
+			ru.location = loc;
+			ru.gl_type = utype;
+			ru.sl_type = sl_type;
+			ru.array_size = MAX(1, (int)usize);
+			if (usize > 1 && (sl_type == ShaderLanguage::TYPE_VEC3 || sl_type == ShaderLanguage::TYPE_VEC4)) {
+				su.array_size = (int)usize;
+			}
+
+			if (is_sampler) {
+				su.order = -1;
+				su.texture_order = tex_unit;
+				ru.tex_unit = tex_unit;
+				p_shader->texture_types.push_back(sl_type);
+				p_shader->texture_hints.push_back(su.hint);
+				tex_unit++;
+				p_shader->texture_count++;
+			} else {
+				su.order = reg_order++;
+				su.texture_order = -1;
+				ru.tex_unit = -1;
+			}
+
+			p_shader->uniforms[sname] = su;
+			p_shader->raw_uniforms.push_back(ru);
+		}
+
+		for (SelfList<Material> *E = p_shader->materials.first(); E; E = E->next()) {
+			_material_make_dirty(E->self());
+		}
+
+		p_shader->valid = true;
+		p_shader->version++;
+		return;
+	}
 
 	if (p_shader->code == String()) {
 		return; //just invalid, but no error
@@ -2485,7 +2815,7 @@ void RasterizerStorageGLES3::shader_get_param_list(RID p_shader, List<PropertyIn
 							for (int a = 0; a < mem.array_size; a++) {
 								PropertyInfo elem_pi;
 								elem_pi.name = base_name + "/" + itos(a);
-								elem_pi.type = (mem.type == ShaderLanguage::TYPE_VEC3) ? Variant::VECTOR3 : Variant::PLANE;
+								elem_pi.type = (mem.type == ShaderLanguage::TYPE_VEC3) ? Variant::VECTOR3 : (mem.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR ? Variant::COLOR : Variant::PLANE);
 								p_param_list->push_back(elem_pi);
 							}
 							continue;
@@ -2521,7 +2851,11 @@ void RasterizerStorageGLES3::shader_get_param_list(RID p_shader, List<PropertyIn
 							pi.type = Variant::VECTOR3;
 							break;
 						case ShaderLanguage::TYPE_VEC4:
-							pi.type = Variant::PLANE;
+							if (mem.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+								pi.type = Variant::COLOR;
+							} else {
+								pi.type = Variant::PLANE;
+							}
 							break;
 						case ShaderLanguage::TYPE_MAT2:
 							pi.type = Variant::TRANSFORM2D;
@@ -2971,157 +3305,190 @@ Variant RasterizerStorageGLES3::material_get_param(RID p_material, const StringN
 	return material_get_param_default(p_material, p_param);
 }
 
-Variant RasterizerStorageGLES3::material_get_param_default(RID p_material, const StringName &p_param) const {
-	const Material *material = material_owner.get(p_material);
-	ERR_FAIL_COND_V(!material, Variant());
 
-	if (material->shader) {
-		String param_str = p_param;
-		int slash_pos = param_str.find("/");
-		if (slash_pos != -1) {
-			StringName base_param = param_str.substr(0, slash_pos);
+static Variant _get_shader_param_default(const RasterizerStorageGLES3::Shader *p_shader, const StringName &p_param) {
+	if (!p_shader) {
+		return Variant();
+	}
 
-			if (material->shader->uniforms.has(base_param) && material->shader->uniforms[base_param].type == ShaderLanguage::TYPE_STRUCT) {
-				const ShaderLanguage::ShaderNode::Uniform &uniform = material->shader->uniforms[base_param];
-				if (material->shader->structs.has(uniform.struct_name)) {
-					const ShaderLanguage::ShaderNode::Struct &st = material->shader->structs[uniform.struct_name];
-					Vector<String> parts = param_str.split("/");
-					String field_name;
-					int array_index = -1;
+	String param_str = p_param;
+	int slash_pos = param_str.find("/");
+	if (slash_pos != -1) {
+		StringName base_param = param_str.substr(0, slash_pos);
 
-					if (uniform.array_size > 0) {
-						if (parts.size() >= 3) {
-							field_name = parts[2];
-						}
-						if (parts.size() >= 4) {
-							array_index = parts[3].to_int();
-						}
-					} else {
-						if (parts.size() >= 2) {
-							field_name = parts[1];
-						}
-						if (parts.size() >= 3) {
-							array_index = parts[2].to_int();
-						}
+		if (p_shader->uniforms.has(base_param) && p_shader->uniforms[base_param].type == ShaderLanguage::TYPE_STRUCT) {
+			const ShaderLanguage::ShaderNode::Uniform &uniform = p_shader->uniforms[base_param];
+			if (p_shader->structs.has(uniform.struct_name)) {
+				const ShaderLanguage::ShaderNode::Struct &st = p_shader->structs[uniform.struct_name];
+				Vector<String> parts = param_str.split("/");
+				String field_name;
+				int array_index = -1;
+				int struct_index = (uniform.array_size > 0 && parts.size() >= 2) ? parts[1].to_int() : 0;
+
+				if (uniform.array_size > 0) {
+					if (parts.size() >= 3) {
+						field_name = parts[2];
 					}
-
-					for (int i = 0; i < st.members.size(); i++) {
-						const ShaderLanguage::ShaderNode::Struct::Member &mem = st.members[i];
-						if (String(mem.name) == field_name) {
-							if (mem.array_size > 0) {
-								if (array_index >= 0) {
-									if (mem.type == ShaderLanguage::TYPE_VEC3) {
-										return Vector3();
-									} else if (mem.type == ShaderLanguage::TYPE_VEC4) {
-										return Plane();
-									}
-								}
-								Array arr;
-								arr.resize(mem.array_size);
-								for (int j = 0; j < mem.array_size; j++) {
-									switch (mem.type) {
-										case ShaderLanguage::TYPE_BOOL: arr[j] = false; break;
-										case ShaderLanguage::TYPE_INT:
-										case ShaderLanguage::TYPE_UINT: arr[j] = 0; break;
-										case ShaderLanguage::TYPE_FLOAT: arr[j] = 0.0f; break;
-										case ShaderLanguage::TYPE_VEC2: arr[j] = Vector2(); break;
-										case ShaderLanguage::TYPE_VEC3: arr[j] = Vector3(); break;
-										case ShaderLanguage::TYPE_VEC4: arr[j] = Plane(); break;
-										case ShaderLanguage::TYPE_MAT2: arr[j] = Transform2D(); break;
-										case ShaderLanguage::TYPE_MAT3: arr[j] = Basis(); break;
-										case ShaderLanguage::TYPE_MAT4: arr[j] = Transform(); break;
-										default: break;
-									}
-								}
-								return arr;
-							} else {
-								switch (mem.type) {
-									case ShaderLanguage::TYPE_BOOL: return false;
-									case ShaderLanguage::TYPE_INT:
-									case ShaderLanguage::TYPE_UINT: return 0;
-									case ShaderLanguage::TYPE_FLOAT: return 0.0f;
-									case ShaderLanguage::TYPE_VEC2: return Vector2();
-									case ShaderLanguage::TYPE_VEC3: return Vector3();
-									case ShaderLanguage::TYPE_VEC4: return Plane();
-									case ShaderLanguage::TYPE_MAT2: return Transform2D();
-									case ShaderLanguage::TYPE_MAT3: return Basis();
-									case ShaderLanguage::TYPE_MAT4: return Transform();
-									default: return Variant();
-								}
-							}
-						}
+					if (parts.size() >= 4) {
+						array_index = parts[3].to_int();
+					}
+				} else {
+					if (parts.size() >= 2) {
+						field_name = parts[1];
+					}
+					if (parts.size() >= 3) {
+						array_index = parts[2].to_int();
 					}
 				}
-				return Variant();
-			}
 
-			int index = param_str.substr(slash_pos + 1, param_str.length()).to_int();
-			if (material->shader->uniforms.has(base_param)) {
-				ShaderLanguage::ShaderNode::Uniform uniform = material->shader->uniforms[base_param];
-				if (uniform.type == ShaderLanguage::TYPE_VEC3) {
-					if (uniform.default_value.size() >= (index + 1) * 3) {
-						return Vector3(uniform.default_value[index * 3].real, uniform.default_value[index * 3 + 1].real, uniform.default_value[index * 3 + 2].real);
+				int struct_val_count = 0;
+				int field_val_offset = 0;
+				for (int i = 0; i < st.members.size(); i++) {
+					int card = ShaderLanguage::get_cardinality(st.members[i].type);
+					int m_count = st.members[i].array_size > 0 ? st.members[i].array_size : 1;
+					if (String(st.members[i].name) == field_name) {
+						field_val_offset = struct_val_count;
 					}
-					return Vector3();
-				} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
-					if (uniform.default_value.size() >= (index + 1) * 4) {
-						float r = uniform.default_value[index * 4].real;
-						float g = uniform.default_value[index * 4 + 1].real;
-						float b = uniform.default_value[index * 4 + 2].real;
-						float a = uniform.default_value[index * 4 + 3].real;
-						if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
-							return Color(r, g, b, a);
+					struct_val_count += card * m_count;
+				}
+
+				for (int i = 0; i < st.members.size(); i++) {
+					const ShaderLanguage::ShaderNode::Struct::Member &mem = st.members[i];
+					if (String(mem.name) == field_name) {
+						int card = ShaderLanguage::get_cardinality(mem.type);
+						int total_offset = struct_index * struct_val_count + field_val_offset;
+						int elem_total = mem.array_size > 0 ? mem.array_size : 1;
+						bool has_uniform_def = uniform.default_value.size() >= (total_offset + card * elem_total);
+						bool has_member_def = mem.default_value.size() >= (card * elem_total);
+
+						auto get_val_at = [&](int p_elem_idx) -> Variant {
+							Vector<ShaderLanguage::ConstantNode::Value> vals;
+							vals.resize(card);
+							if (has_uniform_def) {
+								int elem_off = total_offset + p_elem_idx * card;
+								for (int v = 0; v < card; v++) {
+									vals.write[v] = uniform.default_value[elem_off + v];
+								}
+								return ShaderLanguage::constant_value_to_variant(vals, mem.type, mem.hint);
+							} else if (has_member_def) {
+								int elem_off = p_elem_idx * card;
+								for (int v = 0; v < card; v++) {
+									vals.write[v] = mem.default_value[elem_off + v];
+								}
+								return ShaderLanguage::constant_value_to_variant(vals, mem.type, mem.hint);
+							}
+
+							if (mem.type == ShaderLanguage::TYPE_VEC4 && mem.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+								return Color(0, 0, 0, 1);
+							}
+							switch (mem.type) {
+								case ShaderLanguage::TYPE_BOOL: return false;
+								case ShaderLanguage::TYPE_INT:
+								case ShaderLanguage::TYPE_UINT: return 0;
+								case ShaderLanguage::TYPE_FLOAT: return 0.0f;
+								case ShaderLanguage::TYPE_VEC2: return Vector2();
+								case ShaderLanguage::TYPE_VEC3: return Vector3();
+								case ShaderLanguage::TYPE_VEC4: return Plane();
+								case ShaderLanguage::TYPE_MAT2: return Transform2D();
+								case ShaderLanguage::TYPE_MAT3: return Basis();
+								case ShaderLanguage::TYPE_MAT4: return Transform();
+								default: return Variant();
+							}
+						};
+
+						if (mem.array_size > 0) {
+							if (array_index >= 0) {
+								return get_val_at(array_index);
+							}
+							Array arr;
+							arr.resize(mem.array_size);
+							for (int j = 0; j < mem.array_size; j++) {
+								arr[j] = get_val_at(j);
+							}
+							return arr;
 						} else {
-							return Plane(r, g, b, a);
+							return get_val_at(0);
 						}
-					}
-					if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
-						return Color(0, 0, 0, 1);
-					} else {
-						return Plane();
 					}
 				}
 			}
 			return Variant();
 		}
 
-		if (material->shader->uniforms.has(p_param)) {
-			ShaderLanguage::ShaderNode::Uniform uniform = material->shader->uniforms[p_param];
-			if (uniform.array_size > 0) {
-				Array arr;
-				arr.resize(uniform.array_size);
-				for (int i = 0; i < uniform.array_size; i++) {
-					if (uniform.type == ShaderLanguage::TYPE_VEC3) {
-						if (uniform.default_value.size() >= (i + 1) * 3) {
-							arr[i] = Vector3(uniform.default_value[i * 3].real, uniform.default_value[i * 3 + 1].real, uniform.default_value[i * 3 + 2].real);
-						} else {
-							arr[i] = Vector3();
-						}
-					} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
-						if (uniform.default_value.size() >= (i + 1) * 4) {
-							float r = uniform.default_value[i * 4].real;
-							float g = uniform.default_value[i * 4 + 1].real;
-							float b = uniform.default_value[i * 4 + 2].real;
-							float a = uniform.default_value[i * 4 + 3].real;
-							if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
-								arr[i] = Color(r, g, b, a);
-							} else {
-								arr[i] = Plane(r, g, b, a);
-							}
-						} else if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
-							arr[i] = Color(0, 0, 0, 1);
-						} else {
-							arr[i] = Plane();
-						}
+		int index = param_str.substr(slash_pos + 1, param_str.length()).to_int();
+		if (p_shader->uniforms.has(base_param)) {
+			ShaderLanguage::ShaderNode::Uniform uniform = p_shader->uniforms[base_param];
+			if (uniform.type == ShaderLanguage::TYPE_VEC3) {
+				if (uniform.default_value.size() >= (index + 1) * 3) {
+					return Vector3(uniform.default_value[index * 3].real, uniform.default_value[index * 3 + 1].real, uniform.default_value[index * 3 + 2].real);
+				}
+				return Vector3();
+			} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
+				if (uniform.default_value.size() >= (index + 1) * 4) {
+					float r = uniform.default_value[index * 4].real;
+					float g = uniform.default_value[index * 4 + 1].real;
+					float b = uniform.default_value[index * 4 + 2].real;
+					float a = uniform.default_value[index * 4 + 3].real;
+					if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+						return Color(r, g, b, a);
+					} else {
+						return Plane(r, g, b, a);
 					}
 				}
-				return arr;
+				if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+					return Color(0, 0, 0, 1);
+				} else {
+					return Plane();
+				}
 			}
-			Vector<ShaderLanguage::ConstantNode::Value> default_value = uniform.default_value;
-			return ShaderLanguage::constant_value_to_variant(default_value, uniform.type, uniform.hint);
 		}
+		return Variant();
 	}
+
+	if (p_shader->uniforms.has(p_param)) {
+		ShaderLanguage::ShaderNode::Uniform uniform = p_shader->uniforms[p_param];
+		if (uniform.array_size > 0) {
+			Array arr;
+			arr.resize(uniform.array_size);
+			for (int i = 0; i < uniform.array_size; i++) {
+				if (uniform.type == ShaderLanguage::TYPE_VEC3) {
+					if (uniform.default_value.size() >= (i + 1) * 3) {
+						arr[i] = Vector3(uniform.default_value[i * 3].real, uniform.default_value[i * 3 + 1].real, uniform.default_value[i * 3 + 2].real);
+					} else {
+						arr[i] = Vector3();
+					}
+				} else if (uniform.type == ShaderLanguage::TYPE_VEC4) {
+					if (uniform.default_value.size() >= (i + 1) * 4) {
+						float r = uniform.default_value[i * 4].real;
+						float g = uniform.default_value[i * 4 + 1].real;
+						float b = uniform.default_value[i * 4 + 2].real;
+						float a = uniform.default_value[i * 4 + 3].real;
+						if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+							arr[i] = Color(r, g, b, a);
+						} else {
+							arr[i] = Plane(r, g, b, a);
+						}
+					} else if (uniform.hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+						arr[i] = Color(0, 0, 0, 1);
+					} else {
+						arr[i] = Plane();
+					}
+				}
+			}
+			return arr;
+		}
+		Vector<ShaderLanguage::ConstantNode::Value> default_value = uniform.default_value;
+		return ShaderLanguage::constant_value_to_variant(default_value, uniform.type, uniform.hint);
+	}
+
 	return Variant();
+}
+
+Variant RasterizerStorageGLES3::material_get_param_default(RID p_material, const StringName &p_param) const {
+	const Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND_V(!material, Variant());
+
+	return _get_shader_param_default(material->shader, p_param);
 }
 
 void RasterizerStorageGLES3::material_set_line_width(RID p_material, float p_width) {
@@ -3972,19 +4339,29 @@ void RasterizerStorageGLES3::_update_material(Material *material) {
 														arr[a] = elem_val->get();
 														found = true;
 													} else {
-														arr[a] = (mem.type == ShaderLanguage::TYPE_VEC3) ? Variant(Vector3()) : Variant(Plane());
+														arr[a] = _get_shader_param_default(p_material->shader, elem_name);
 													}
 												}
 												if (found) {
 													_fill_std140_array_ubo_value(mem.type, mem.array_size, arr, field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
 												} else {
-													memset(field_dst, 0, 16 * mem.array_size);
+													Variant def_arr = _get_shader_param_default(p_material->shader, param_name);
+													if (def_arr.get_type() == Variant::ARRAY) {
+														_fill_std140_array_ubo_value(mem.type, mem.array_size, def_arr, field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
+													} else {
+														memset(field_dst, 0, 16 * mem.array_size);
+													}
 												}
 											}
 										} else if (param_val) {
 											_fill_std140_variant_ubo_value(mem.type, param_val->get(), field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
 										} else {
-											_fill_std140_ubo_empty(mem.type, field_dst);
+											Variant def_val = _get_shader_param_default(p_material->shader, param_name);
+											if (def_val.get_type() != Variant::NIL) {
+												_fill_std140_variant_ubo_value(mem.type, def_val, field_dst, p_material->shader->mode == VS::SHADER_SPATIAL);
+											} else {
+												_fill_std140_ubo_empty(mem.type, field_dst);
+											}
 										}
 									}
 									offset_in_struct += m_size;
@@ -7831,10 +8208,10 @@ void RasterizerStorageGLES3::_render_target_clear(RenderTarget *rt) {
 				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.specular_texture)->tex_id);
 				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.normal_texture)->tex_id);
 				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.sss_texture)->tex_id);
-				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.custom_texture)->tex_id);
-				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.material_id_texture)->tex_id);
-				glDeleteTextures(1, &texture_owner.getornull(rt->buffers.sln_texture)->tex_id);
 			}
+			glDeleteTextures(1, &texture_owner.getornull(rt->buffers.custom_texture)->tex_id);
+			glDeleteTextures(1, &texture_owner.getornull(rt->buffers.material_id_texture)->tex_id);
+			glDeleteTextures(1, &texture_owner.getornull(rt->buffers.sln_texture)->tex_id);
 		}
 
 		rt->buffers.effects_active = false;
@@ -9031,6 +9408,10 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		if (shader->shader && shader->custom_code_id) {
 			shader->shader->free_custom_shader(shader->custom_code_id);
 		}
+		if (shader->raw_program) {
+			glDeleteProgram(shader->raw_program);
+			shader->raw_program = 0;
+		}
 
 		if (shader->dirty_list.in_list()) {
 			_shader_dirty_list.remove(&shader->dirty_list);
@@ -9432,69 +9813,67 @@ void RasterizerStorageGLES3::initialize() {
 #endif
 
 	int compilation_mode = 0;
-	if (!(Engine::get_singleton()->is_editor_hint() || Main::is_project_manager())) {
-		compilation_mode = ProjectSettings::get_singleton()->get("rendering/gles3/shaders/shader_compilation_mode");
+	if (!Main::is_project_manager()) {
+		if (ProjectSettings::get_singleton()->has_setting("rendering/gles3/shaders/shader_compilation_mode")) {
+			compilation_mode = ProjectSettings::get_singleton()->get("rendering/gles3/shaders/shader_compilation_mode");
+		}
 	}
+
 	config.async_compilation_enabled = compilation_mode >= 1;
-	config.shader_cache_enabled = compilation_mode == 2;
+	config.shader_cache_enabled = (compilation_mode == 2) && !Engine::get_singleton()->is_editor_hint();
+
+	ShaderGLES3::compiles_started_this_frame = &info.render.shader_compiles_started_count;
+	ShaderGLES3::max_frame_compiles_in_progress = &info.render.shader_compiles_in_progress_count;
 
 	if (config.async_compilation_enabled) {
-		ShaderGLES3::max_simultaneous_compiles = MAX(1, (int)ProjectSettings::get_singleton()->get("rendering/gles3/shaders/max_simultaneous_compiles"));
+		int cpu_cores = OS::get_singleton()->get_processor_count();
+		int custom_compiles = 0;
+		if (ProjectSettings::get_singleton()->has_setting("rendering/gles3/shaders/max_simultaneous_compiles")) {
+			custom_compiles = (int)ProjectSettings::get_singleton()->get("rendering/gles3/shaders/max_simultaneous_compiles");
+		}
+		ShaderGLES3::max_simultaneous_compiles = custom_compiles > 0 ? custom_compiles : CLAMP(cpu_cores * 2, 8, 32);
+
+		int max_threads = -1;
+		if (ProjectSettings::get_singleton()->has_setting("rendering/quality/shaders/max_shader_compiler_threads")) {
+			max_threads = GLOBAL_GET("rendering/quality/shaders/max_shader_compiler_threads");
+		}
+		GLuint gl_threads;
+		if (max_threads == 0) {
+			gl_threads = 0;
+		} else if (max_threads < 0) {
+			gl_threads = (GLuint)MAX(2, cpu_cores - 1);
+		} else {
+			gl_threads = (GLuint)max_threads;
+		}
+
 #ifdef GLES_OVER_GL
 		if (GLAD_GL_ARB_parallel_shader_compile) {
-			glMaxShaderCompilerThreadsARB(ShaderGLES3::max_simultaneous_compiles);
+			glMaxShaderCompilerThreadsARB(gl_threads);
 		} else if (GLAD_GL_KHR_parallel_shader_compile) {
-			glMaxShaderCompilerThreadsKHR(ShaderGLES3::max_simultaneous_compiles);
+			glMaxShaderCompilerThreadsKHR(gl_threads);
 		}
-#else
-#if defined(IPHONE_ENABLED) || defined(ANDROID_ENABLED) // TODO: Consider more platforms?
-		void *gles3_lib = nullptr;
-		void (*MaxShaderCompilerThreads)(GLuint) = nullptr;
-#if defined(IPHONE_ENABLED)
-		gles3_lib = dlopen(nullptr, RTLD_LAZY);
-#elif defined(ANDROID_ENABLED)
-		gles3_lib = dlopen("libGLESv3.so", RTLD_LAZY);
-#endif
-		if (gles3_lib) {
-			MaxShaderCompilerThreads = (void (*)(GLuint))dlsym(gles3_lib, "glMaxShaderCompilerThreadsARB");
-			if (!MaxShaderCompilerThreads) {
-				MaxShaderCompilerThreads = (void (*)(GLuint))dlsym(gles3_lib, "glMaxShaderCompilerThreadsKHR");
-			}
-		}
-		if (MaxShaderCompilerThreads) {
-			MaxShaderCompilerThreads(ShaderGLES3::max_simultaneous_compiles);
-		} else {
-#ifdef DEBUG_ENABLED
-			print_line("Async. shader compilation: No MaxShaderCompilerThreads function found.");
-#endif
-		}
-#endif
 #endif
 	} else {
 		ShaderGLES3::max_simultaneous_compiles = 0;
 	}
-#ifdef DEBUG_ENABLED
-	ShaderGLES3::log_active_async_compiles_count = (bool)ProjectSettings::get_singleton()->get("rendering/gles3/shaders/log_active_async_compiles_count");
-#endif
 
-	frame.clear_request = false;
-
-	shaders.compile_queue = nullptr;
 	shaders.cache = nullptr;
 	shaders.cache_write_queue = nullptr;
 	bool effectively_on = false;
+
 	if (config.async_compilation_enabled) {
+		// Fully bypass secondary context queue to stop cross-context glProgramBinary rejections and main-thread hangs
+		shaders.compile_queue = nullptr;
+		ShaderGLES3::compile_queue = nullptr;
+		ShaderGLES3::parallel_compile_supported = config.parallel_shader_compile_supported;
+
 		if (config.parallel_shader_compile_supported) {
-			print_line("Async. shader compilation: ON (full native support)");
-			effectively_on = true;
-		} else if (config.program_binary_supported && OS::get_singleton()->is_offscreen_gl_available()) {
-			shaders.compile_queue = memnew(ThreadedCallableQueue<GLuint>());
-			shaders.compile_queue->enqueue(0, []() { OS::get_singleton()->set_offscreen_gl_current(true); });
-			print_line("Async. shader compilation: ON (via secondary context)");
+			print_line("Async. shader compilation: ON (Native Parallel Driver Multi-threaded)");
 			effectively_on = true;
 		} else {
-			print_line("Async. shader compilation: OFF (enabled for " + String(Engine::get_singleton()->is_editor_hint() ? "editor" : "project") + ", but not supported)");
+			print_line("Async. shader compilation: OFF (GL_KHR_parallel_shader_compile not supported)");
 		}
+
 		if (effectively_on) {
 			if (config.shader_cache_enabled) {
 				if (config.program_binary_supported) {
@@ -9681,6 +10060,15 @@ void RasterizerStorageGLES3::initialize() {
 	bool ggx_hq = GLOBAL_GET("rendering/quality/reflections/high_quality_ggx");
 	shaders.cubemap_filter.set_conditional(CubemapFilterShaderGLES3::LOW_QUALITY, !ggx_hq);
 	shaders.particles.init();
+
+	// Warm up built-in transform feedback and compute shaders during startup so they never stall gameplay
+	shaders.particles.bind();
+	shaders.particles.unbind();
+	shaders.copy.bind();
+	shaders.copy.unbind();
+
+	SharedGL43Context::get_singleton()->initialize();
+
 	if (config.async_compilation_enabled) {
 		shaders.particles.init_async_compilation();
 	}

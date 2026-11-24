@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="RTGI" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Real-time GPU BVH ray-traced global illumination node using OpenGL 4.3 compute shaders.
+	</brief_description>
+	<description>
+		Computes physically-based indirect diffuse global illumination (color bleeding, emissive mesh lighting, sky irradiance, and multi-bounce light transport) against scene [MeshInstance]s, [MultiMeshInstance]s, [CSGShape]s, and animated skinned [Skeleton] meshes using a two-level GPU BVH (TLAS/BLAS) and an incremental 3D [Texture3D] irradiance volume cache.
+		Denoises demodulated irradiance using checkerboard reconstruction, YCoCg variance-clipped temporal accumulation, and edge-aware A-Trous spatial filtering before multiplying by surface diffuse albedo and bilaterally upsampling onto the active viewport.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="apply_quality_preset">
+			<return type="void" />
+			<argument index="0" name="preset" type="int" enum="RTGI.QualityPreset" />
+			<description>
+				Applies a scalability preset ([constant PRESET_LOW], [constant PRESET_MEDIUM], [constant PRESET_HIGH], or [constant PRESET_ULTRA]) across resolution, ray count, bounce depth, 3D volume density, denoising, and simplification settings.
+			</description>
+		</method>
+		<method name="get_gi_albedo_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F receiver diffuse albedo [Texture] (RGB = [code]albedo * (1.0 - metallic)[/code], A = receiver mask).
+			</description>
+		</method>
+		<method name="get_gi_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F demodulated indirect irradiance [Texture] (RGB = linear HDR irradiance, A = camera-to-surface distance, negative for sky/invalid).
+			</description>
+		</method>
+		<method name="get_gi_volume_texture" qualifiers="const">
+			<return type="Texture3D" />
+			<description>
+				Returns the real-time camera-centered RGBA16F 3D [Texture3D] irradiance cache updated on the GPU.
+			</description>
+		</method>
+		<method name="mark_geometry_dirty">
+			<return type="void" />
+			<description>
+				Invalidates cached BLAS structures so acceleration structures rebuild on the next snapshot update.
+			</description>
+		</method>
+		<method name="reset_history">
+			<return type="void" />
+			<description>
+				Clears temporal accumulation and 3D volume history. Call after camera cuts or teleports.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="alpha_consideration" type="bool" setter="set_alpha_consideration" getter="get_alpha_consideration" default="true">
+			Enables material alpha awareness in the G-buffer and BVH traversal.
+		</member>
+		<member name="alpha_max_steps" type="int" setter="set_alpha_max_steps" getter="get_alpha_max_steps" default="4">
+			Maximum number of alpha-tested or semi-transparent surfaces a single GI ray can traverse per bounce.
+		</member>
+		<member name="alpha_ray_transparency" type="bool" setter="set_alpha_ray_transparency" getter="get_alpha_ray_transparency" default="true">
+			Allows GI rays to pass through alpha-scissor cutouts and transmit through semi-transparent surfaces.
+		</member>
+		<member name="alpha_shadow_transmission" type="bool" setter="set_alpha_shadow_transmission" getter="get_alpha_shadow_transmission" default="true">
+			Allows shadow rays inside GI bounces to attenuate through alpha-tested and transparent casters.
+		</member>
+		<member name="ambient_bounce_approximation" type="float" setter="set_ambient_bounce_approximation" getter="get_ambient_bounce_approximation" default="0.0">
+			Approximates additional indirect wrap fill on bounce hits using directional light and sky spherical harmonics.
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			Automatically composites indirect global illumination onto active viewports before volumetric fog and 2D UI.
+		</member>
+		<member name="bilateral_upsample" type="bool" setter="set_bilateral_upsample" getter="get_bilateral_upsample" default="true">
+			Uses depth-aware bilateral filtering when upsampling lower-resolution GI onto full-resolution edges.
+		</member>
+		<member name="blas_builds_per_frame" type="int" setter="set_blas_builds_per_frame" getter="get_blas_builds_per_frame" default="0">
+			Maximum number of new or invalidated mesh BLAS structures built per frame ([code]0[/code] = unlimited).
+		</member>
+		<member name="bounce_distance_falloff" type="float" setter="set_bounce_distance_falloff" getter="get_bounce_distance_falloff" default="0.75">
+			Multiplies [member max_ray_distance] after each bounce to keep multi-bounce traversal fast.
+		</member>
+		<member name="bounce_energy_boost" type="float" setter="set_bounce_energy_boost" getter="get_bounce_energy_boost" default="1.0">
+			Multiplier applied to albedo throughput between secondary GI bounces.
+		</member>
+		<member name="bounce_local_lights" type="bool" setter="set_bounce_local_lights" getter="get_bounce_local_lights" default="true">
+			Evaluates [OmniLight] and [SpotLight] illumination on secondary GI bounces in addition to [DirectionalLight]s.
+		</member>
+		<member name="bounce_throughput_threshold" type="float" setter="set_bounce_throughput_threshold" getter="get_bounce_throughput_threshold" default="0.02">
+			Early-terminates bounce chains once path throughput drops below this threshold.
+		</member>
+		<member name="checkerboard_tracing" type="bool" setter="set_checkerboard_tracing" getter="get_checkerboard_tracing" default="false">
+			Traces half of the pixels per frame in an alternating checkerboard pattern and reconstructs missing pixels from neighbors.
+		</member>
+		<member name="custom_sky" type="Sky" setter="set_custom_sky" getter="get_custom_sky">
+			Custom [ProceduralSky] or [PanoramaSky] resource used when [member custom_sky_mode] is [constant SKY_MODE_CUSTOM_SKY].
+		</member>
+		<member name="custom_sky_color" type="Color" setter="set_custom_sky_color" getter="get_custom_sky_color" default="Color( 0.2, 0.25, 0.3, 1 )">
+			Uniform indirect sky color used when [member custom_sky_mode] is [constant SKY_MODE_COLOR].
+		</member>
+		<member name="custom_sky_energy" type="float" setter="set_custom_sky_energy" getter="get_custom_sky_energy" default="1.0">
+			Brightness multiplier for [member custom_sky] or [member custom_sky_color].
+		</member>
+		<member name="custom_sky_mode" type="int" setter="set_custom_sky_mode" getter="get_custom_sky_mode" enum="RTGI.CustomSkyMode" default="0">
+			Selects whether indirect sky lighting uses the active [Environment], [member custom_sky], or [member custom_sky_color].
+		</member>
+		<member name="custom_sky_rotation" type="Vector3" setter="set_custom_sky_rotation" getter="get_custom_sky_rotation" default="Vector3( 0, 0, 0 )">
+			Euler rotation in degrees applied to the custom GI sky orientation.
+		</member>
+		<member name="debug_mode" type="int" setter="set_debug_mode" getter="get_debug_mode" enum="RTGI.DebugMode" default="0">
+			Visualizes demodulated irradiance, GI-only lighting, receiver albedo, or the 3D irradiance volume.
+		</member>
+		<member name="distance_lod_strength" type="float" setter="set_distance_lod_strength" getter="get_distance_lod_strength" default="1.0">
+			Increases sampled texture mipmap LOD as total ray path distance grows.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables real-time GI rendering inside the 3D editor viewport.
+		</member>
+		<member name="emissive_intensity" type="float" setter="set_emissive_intensity" getter="get_emissive_intensity" default="1.0">
+			Multiplier applied to emissive materials hit by GI rays.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Master toggle for ray-traced global illumination capture, compute dispatch, and compositing.
+		</member>
+		<member name="firefly_clamp" type="float" setter="set_firefly_clamp" getter="get_firefly_clamp" default="10.0">
+			Maximum per-sample HDR luminance clamp used to prevent high-variance fireflies ([code]0.0[/code] disables clamping).
+		</member>
+		<member name="frustum_cull_gbuffer" type="bool" setter="set_frustum_cull_gbuffer" getter="get_frustum_cull_gbuffer" default="true">
+			Skips off-screen meshes in the primary G-buffer pass while keeping them active in the ray-traced TLAS.
+		</member>
+		<member name="gi_cull_mask" type="int" setter="set_gi_cull_mask" getter="get_gi_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes participate in GI ray bounces.
+		</member>
+		<member name="gi_intensity" type="float" setter="set_gi_intensity" getter="get_gi_intensity" default="1.0">
+			Overall intensity multiplier applied to composited global illumination.
+		</member>
+		<member name="gi_viewing_cull_mask" type="int" setter="set_gi_viewing_cull_mask" getter="get_gi_viewing_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes receive ray-traced global illumination.
+		</member>
+		<member name="light_cull_distance" type="float" setter="set_light_cull_distance" getter="get_light_cull_distance" default="120.0">
+			Maximum distance from the camera beyond which local lights are excluded from GI bounce shading.
+		</member>
+		<member name="max_bounces" type="int" setter="set_max_bounces" getter="get_max_bounces" default="2">
+			Maximum number of diffuse indirect light bounces traced per ray.
+		</member>
+		<member name="max_ray_distance" type="float" setter="set_max_ray_distance" getter="get_max_ray_distance" default="60.0">
+			Maximum world-space distance (in meters) a primary GI ray travels before falling back to sky radiance.
+		</member>
+		<member name="max_texture_layers" type="int" setter="set_max_texture_layers" getter="get_max_texture_layers" default="64">
+			Maximum unique textures packed into the GPU texture array for hit shading.
+		</member>
+		<member name="max_tlas_instances" type="int" setter="set_max_tlas_instances" getter="get_max_tlas_instances" default="0">
+			Caps the number of nearest mesh instances inserted into the TLAS per frame ([code]0[/code] = unlimited).
+		</member>
+		<member name="mesh_cull_distance" type="float" setter="set_mesh_cull_distance" getter="get_mesh_cull_distance" default="45.0">
+			Distance beyond which small meshes below [member mesh_cull_min_angle] are omitted from GI.
+		</member>
+		<member name="mesh_cull_min_angle" type="float" setter="set_mesh_cull_min_angle" getter="get_mesh_cull_min_angle" default="0.012">
+			Minimum bounding-sphere angular radius (in radians) required for distant meshes.
+		</member>
+		<member name="mesh_simplification_enabled" type="bool" setter="set_mesh_simplification_enabled" getter="is_mesh_simplification_enabled" default="false">
+			Simplifies high-polygon meshes when building GI BLAS acceleration structures.
+		</member>
+		<member name="mesh_simplification_gbuffer" type="bool" setter="set_mesh_simplification_gbuffer" getter="get_mesh_simplification_gbuffer" default="false">
+			Uses simplified proxy geometry in the primary GI G-buffer pass as well as the BLAS.
+		</member>
+		<member name="mesh_simplification_max_error" type="float" setter="set_mesh_simplification_max_error" getter="get_mesh_simplification_max_error" default="0.05">
+			Maximum normalized QEM geometric error permitted during edge collapse.
+		</member>
+		<member name="mesh_simplification_min_triangles" type="int" setter="set_mesh_simplification_min_triangles" getter="get_mesh_simplification_min_triangles" default="128">
+			Meshes at or below this triangle count are not simplified.
+		</member>
+		<member name="mesh_simplification_mode" type="int" setter="set_mesh_simplification_mode" getter="get_mesh_simplification_mode" enum="RTGI.SimplificationMode" default="0">
+			Mesh simplification algorithm ([constant SIMPLIFY_QEM] or [constant SIMPLIFY_VERTEX_CLUSTERING]).
+		</member>
+		<member name="mesh_simplification_preserve_seams" type="bool" setter="set_mesh_simplification_preserve_seams" getter="get_mesh_simplification_preserve_seams" default="true">
+			Preserves UV, normal, and material seams during mesh simplification.
+		</member>
+		<member name="mesh_simplification_ratio" type="float" setter="set_mesh_simplification_ratio" getter="get_mesh_simplification_ratio" default="0.5">
+			Target triangle retention fraction when simplifying meshes.
+		</member>
+		<member name="mesh_simplification_skinned" type="bool" setter="set_mesh_simplification_skinned" getter="get_mesh_simplification_skinned" default="false">
+			Allows simplifying skeletal skinned meshes.
+		</member>
+		<member name="normal_maps_in_bounces" type="bool" setter="set_normal_maps_in_bounces" getter="get_normal_maps_in_bounces" default="true">
+			Evaluates surface normal maps on bounce hits for richer indirect lighting.
+		</member>
+		<member name="ray_origin_bias" type="float" setter="set_ray_origin_bias" getter="get_ray_origin_bias" default="0.005">
+			Surface normal offset applied to ray origins to prevent self-intersection.
+		</member>
+		<member name="rays_per_pixel" type="int" setter="set_rays_per_pixel" getter="get_rays_per_pixel" default="2">
+			Number of cosine-weighted diffuse hemisphere paths traced per pixel.
+		</member>
+		<member name="resolution_scale" type="float" setter="set_resolution_scale" getter="get_resolution_scale" default="0.5">
+			Resolution scale of the internal GI trace buffer relative to the active viewport.
+		</member>
+		<member name="respect_material_cull_mode" type="bool" setter="set_respect_material_cull_mode" getter="get_respect_material_cull_mode" default="true">
+			Honors each [SpatialMaterial]'s cull mode during G-buffer rendering and BVH traversal.
+		</member>
+		<member name="shadow_bounces" type="int" setter="set_shadow_bounces" getter="get_shadow_bounces" default="2">
+			Maximum bounce depth at which direct light shadow rays are traced.
+		</member>
+		<member name="shadow_max_distance" type="float" setter="set_shadow_max_distance" getter="get_shadow_max_distance" default="80.0">
+			Maximum ray path distance from the camera within which bounce hits trace shadow rays.
+		</member>
+		<member name="shadow_ray_bias" type="float" setter="set_shadow_ray_bias" getter="get_shadow_ray_bias" default="0.005">
+			Surface normal offset applied to shadow ray origins.
+		</member>
+		<member name="skinned_meshes_in_gi" type="bool" setter="set_skinned_meshes_in_gi" getter="get_skinned_meshes_in_gi" default="true">
+			Includes animated skeletal meshes via CPU skinning and bottom-up BVH refitting.
+		</member>
+		<member name="sky_indirect_enabled" type="bool" setter="set_sky_indirect_enabled" getter="get_sky_indirect_enabled" default="true">
+			Includes sky radiance when GI rays miss scene geometry. Disable if you only want geometry bounce and emissive GI on top of Godot's environment ambient.
+		</member>
+		<member name="sky_indirect_energy" type="float" setter="set_sky_indirect_energy" getter="get_sky_indirect_energy" default="1.0">
+			Brightness multiplier applied to sky radiance sampled by GI rays.
+		</member>
+		<member name="spatial_denoise_passes" type="int" setter="set_spatial_denoise_passes" getter="get_spatial_denoise_passes" default="3">
+			Number of edge-aware A-Trous bilateral spatial denoising passes executed on demodulated irradiance.
+		</member>
+		<member name="temporal_accumulation" type="bool" setter="set_temporal_accumulation" getter="get_temporal_accumulation" default="true">
+			Reprojects previous-frame irradiance using world-space position and YCoCg variance clipping.
+		</member>
+		<member name="temporal_blend" type="float" setter="set_temporal_blend" getter="get_temporal_blend" default="0.12">
+			Current-frame blend weight when [member temporal_accumulation] is enabled.
+		</member>
+		<member name="temporal_noise" type="bool" setter="set_temporal_noise" getter="get_temporal_noise" default="true">
+			Animates hemisphere sampling jitter across successive frames using a low-discrepancy sequence. Disable for a static noise pattern.
+		</member>
+		<member name="texture_array_resolution" type="int" setter="set_texture_array_resolution" getter="get_texture_array_resolution" enum="RTGI.TextureResolution" default="256">
+			Square resolution of each slice in the GPU texture array used for bounce shading.
+		</member>
+		<member name="texture_lod_bias" type="float" setter="set_texture_lod_bias" getter="get_texture_lod_bias" default="0.5">
+			Mipmap LOD bias added when sampling textures on GI bounce hits.
+		</member>
+		<member name="trace_shadows" type="bool" setter="set_trace_shadows" getter="get_trace_shadows" default="true">
+			Enables ray-traced direct light shadows on surfaces hit by GI rays.
+		</member>
+		<member name="update_interval" type="int" setter="set_update_interval" getter="get_update_interval" default="1">
+			Executes GI tracing once every N frames.
+		</member>
+		<member name="volume_enabled" type="bool" setter="set_volume_enabled" getter="is_volume_enabled" default="true">
+			Enables the camera-centered 3D [Texture3D] irradiance cache for infinite-bounce light propagation.
+		</member>
+		<member name="volume_extents" type="Vector3" setter="set_volume_extents" getter="get_volume_extents" default="Vector3( 24, 12, 24 )">
+			Half-extents (in meters) around the camera covered by the 3D irradiance volume.
+		</member>
+		<member name="volume_feedback" type="float" setter="set_volume_feedback" getter="get_volume_feedback" default="0.65">
+			Multi-bounce feedback weight sampled from the 3D irradiance volume on final bounce hits.
+		</member>
+		<member name="volume_ray_distance" type="float" setter="set_volume_ray_distance" getter="get_volume_ray_distance" default="40.0">
+			Maximum ray distance (in meters) traced per voxel when updating the 3D irradiance volume.
+		</member>
+		<member name="volume_rays_per_voxel" type="int" setter="set_volume_rays_per_voxel" getter="get_volume_rays_per_voxel" default="6">
+			Number of spherical rays traced per voxel in the 3D irradiance volume pass.
+		</member>
+		<member name="volume_resolution" type="Vector3" setter="set_volume_resolution" getter="get_volume_resolution" default="Vector3( 24, 12, 24 )">
+			3D voxel dimensions of the real-time [Texture3D] irradiance volume.
+		</member>
+		<member name="volume_update_interval" type="int" setter="set_volume_update_interval" getter="get_volume_update_interval" default="2">
+			Updates the 3D irradiance volume once every N traced frames.
+		</member>
+	</members>
+	<constants>
+		<constant name="PRESET_LOW" value="0" enum="QualityPreset">
+			Quarter-resolution checkerboard 1-bounce GI with vertex-clustering simplification and low-res 3D volume.
+		</constant>
+		<constant name="PRESET_MEDIUM" value="1" enum="QualityPreset">
+			Half-resolution 2-spp 2-bounce GI with QEM simplification, 3D volume cache, and 3 denoise passes.
+		</constant>
+		<constant name="PRESET_HIGH" value="2" enum="QualityPreset">
+			Three-quarter-resolution 4-spp 2-bounce GI with full-detail meshes and higher-density 3D volume.
+		</constant>
+		<constant name="PRESET_ULTRA" value="3" enum="QualityPreset">
+			Full-resolution 8-spp 3-bounce GI with 4 denoise passes and 48x24x48 3D irradiance cache.
+		</constant>
+		<constant name="SKY_MODE_ENVIRONMENT" value="0" enum="CustomSkyMode">
+			Uses the active viewport [Environment] sky or background color.
+		</constant>
+		<constant name="SKY_MODE_CUSTOM_SKY" value="1" enum="CustomSkyMode">
+			Overrides GI sky radiance with [member custom_sky].
+		</constant>
+		<constant name="SKY_MODE_COLOR" value="2" enum="CustomSkyMode">
+			Overrides GI sky radiance with a uniform [member custom_sky_color].
+		</constant>
+		<constant name="SIMPLIFY_QEM" value="0" enum="SimplificationMode">
+			Quadric Error Metric edge collapse preserving silhouettes, UV seams, and material boundaries.
+		</constant>
+		<constant name="SIMPLIFY_VERTEX_CLUSTERING" value="1" enum="SimplificationMode">
+			Fast uniform 3D spatial grid clustering for rapid BLAS generation.
+		</constant>
+		<constant name="TEX_RES_128" value="128" enum="TextureResolution">
+			128x128 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_256" value="256" enum="TextureResolution">
+			256x256 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_512" value="512" enum="TextureResolution">
+			512x512 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_1024" value="1024" enum="TextureResolution">
+			1024x1024 resolution per texture array slice.
+		</constant>
+		<constant name="DEBUG_NONE" value="0" enum="DebugMode">
+			Normal composited output.
+		</constant>
+		<constant name="DEBUG_IRRADIANCE" value="1" enum="DebugMode">
+			Displays raw demodulated indirect irradiance.
+		</constant>
+		<constant name="DEBUG_GI_ONLY" value="2" enum="DebugMode">
+			Displays pure indirect GI lighting ([code]irradiance * albedo[/code]).
+		</constant>
+		<constant name="DEBUG_ALBEDO" value="3" enum="DebugMode">
+			Displays receiver diffuse albedo ([code]albedo * (1.0 - metallic)[/code]).
+		</constant>
+		<constant name="DEBUG_VOLUME_3D" value="4" enum="DebugMode">
+			Displays the sampled 3D irradiance volume at surface positions.
+		</constant>
+	</constants>
+</class>

@@ -38,6 +38,7 @@
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/main/timer.h"
+#include "scene/resources/glsl_shader.h"
 #include "scene/resources/shader.h"
 #include "servers/visual/shader_language.h"
 
@@ -45,6 +46,7 @@ class ShaderTextEditor : public CodeTextEditor {
 	GDCLASS(ShaderTextEditor, CodeTextEditor);
 
 	Ref<Shader> shader;
+	Ref<GLSLShader> glsl_shader;
 
 	void _check_shader_mode();
 
@@ -61,6 +63,8 @@ public:
 
 	Ref<Shader> get_edited_shader() const;
 	void set_edited_shader(const Ref<Shader> &p_shader);
+	Ref<GLSLShader> get_edited_glsl_shader() const;
+	void set_edited_glsl_shader(const Ref<GLSLShader> &p_shader);
 	ShaderTextEditor();
 };
 
@@ -130,7 +134,10 @@ public:
 	void apply_shaders();
 
 	void ensure_select_current();
+	Ref<GLSLShader> glsl_shader;
+
 	void edit(const Ref<Shader> &p_shader);
+	void edit_glsl(const Ref<GLSLShader> &p_glsl_shader);
 
 	void goto_line_selection(int p_line, int p_begin, int p_end);
 

@@ -1,0 +1,18 @@
+Import("env")
+Import("env_modules")
+
+env_rtao = env_modules.Clone()
+env_rtao.add_source_files(env.modules_sources, [
+	"baked_rtao.cpp",
+	"local_rtao.cpp",
+	"register_types.cpp",
+	"rtao.cpp",
+	"rtao_editor_plugin.cpp",
+])
+
+env_rtao_avx = env_modules.Clone()
+if env.msvc:
+	env_rtao_avx.Append(CCFLAGS=["/arch:AVX"])
+else:
+	env_rtao_avx.Append(CCFLAGS=["-mavx"])
+env_rtao_avx.add_source_files(env.modules_sources, ["ao_bake_avx.cpp"])

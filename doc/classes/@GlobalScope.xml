@@ -32,6 +32,9 @@
 		</member>
 		<member name="GodotSharp" type="GodotSharp" setter="" getter="">
 		</member>
+		<member name="GL43Server" type="GL43Server" setter="" getter="">
+			The [GL43Server] singleton.
+		</member>
 		<member name="IP" type="IP" setter="" getter="">
 			The [IP] singleton.
 		</member>

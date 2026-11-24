@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="BakedFogVolume" inherits="Spatial" version="3.6">
+	<brief_description>
+		Pre-baked 3D texture volumetric fog volume for fast static light shafts and localized fog.
+	</brief_description>
+	<description>
+		Bakes local fog volumes, static light scattering, and ray-traced mesh shadows into a [Texture3D] resource sampled during [VolumetricFog] raymarching.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="bake">
+			<return type="bool" />
+			<description>
+				Bakes density, local volumes, lighting, and static mesh shadows into [member baked_texture].
+			</description>
+		</method>
+	</methods>
+	<constants>
+	</constants>
+</class>

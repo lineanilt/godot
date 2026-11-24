@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="BakedRTAO" inherits="Spatial" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Pre-baked 3D texture ambient occlusion and bent-normal volume that can run standalone or with RTAO.
+	</brief_description>
+	<description>
+		Ray-traces static scene geometry ([MeshInstance] and [MultiMeshInstance]) and optional [LocalRTAO] volumes into a 3D [Texture3D] resource storing bent normals (RGB) and scalar ambient occlusion (A).
+		Can run completely standalone without [RTAO] using a lightweight 2D canvas overlay for ultra-high performance on low-end hardware and mobile, or automatically integrates into [RTAO] when present.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="bake">
+			<return type="bool" />
+			<description>
+				Ray-traces static scene geometry within [member extents] and stores the resulting bent normals and ambient occlusion in [member baked_texture] and [member baked_data].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="ao_color" type="Color" setter="set_ao_color" getter="get_ao_color" default="Color( 0, 0, 0, 1 )">
+			Tint color applied to occluded regions sampled from this volume.
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			When running standalone without [RTAO], automatically composites this baked volume onto the active viewport using a fast 2D canvas pass.
+		</member>
+		<member name="bake_filter" type="bool" setter="set_bake_filter" getter="get_bake_filter" default="true">
+			Enables trilinear hardware filtering on [member baked_texture].
+		</member>
+		<member name="bake_local_volumes" type="bool" setter="set_bake_local_volumes" getter="get_bake_local_volumes" default="true">
+			Includes [LocalRTAO] direct-occlusion volumes during baking.
+		</member>
+		<member name="bake_power" type="float" setter="set_bake_power" getter="get_bake_power" default="1.0">
+			Distance falloff exponent applied to ray hits during baking.
+		</member>
+		<member name="bake_radius" type="float" setter="set_bake_radius" getter="get_bake_radius" default="3.0">
+			Maximum ray distance (in meters) traced per voxel during baking.
+		</member>
+		<member name="bake_ray_bias" type="float" setter="set_bake_ray_bias" getter="get_bake_ray_bias" default="0.05">
+			Origin offset along ray directions during baking to avoid self-occlusion near surfaces.
+		</member>
+		<member name="bake_samples" type="int" setter="set_bake_samples" getter="get_bake_samples" default="32">
+			Number of spherical rays traced per voxel when calling [method bake].
+		</member>
+		<member name="baked_data" type="PoolByteArray" setter="set_baked_data" getter="get_baked_data" default="PoolByteArray(  )">
+		</member>
+		<member name="baked_data_resolution" type="Vector3" setter="set_baked_data_resolution" getter="get_baked_data_resolution" default="Vector3( 0, 0, 0 )">
+		</member>
+		<member name="baked_texture" type="Texture3D" setter="set_baked_texture" getter="get_baked_texture">
+			The baked 3D [Texture3D] containing bent normals (RGB) and ambient occlusion (A).
+		</member>
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="BakedRTAO.BlendMode" default="0">
+			Controls how this baked volume combines with scene lighting.
+		</member>
+		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="4294967295">
+			Camera visibility layers in which this baked volume is active.
+		</member>
+		<member name="direct_light_preservation" type="float" setter="set_direct_light_preservation" getter="get_direct_light_preservation" default="0.5">
+			Reduces ambient occlusion darkening on brightly lit or emissive pixels during standalone compositing.
+		</member>
+		<member name="edge_falloff" type="float" setter="set_edge_falloff" getter="get_edge_falloff" default="0.15">
+			Smooth fade fraction near the outer bounds of [member extents].
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables previewing baked ambient occlusion inside the 3D editor viewport.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Toggles evaluation and compositing of this baked volume.
+		</member>
+		<member name="extents" type="Vector3" setter="set_extents" getter="get_extents" default="Vector3( 8, 4, 8 )">
+			Half-extents of the bounding box in local space.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			Strength multiplier applied when sampling the baked occlusion.
+		</member>
+		<member name="resolution" type="Vector3" setter="set_resolution" getter="get_resolution" default="Vector3( 32, 16, 32 )">
+			3D voxel grid dimensions used when baking [member baked_texture].
+		</member>
+		<member name="shadow_cull_mask" type="int" setter="set_shadow_cull_mask" getter="get_shadow_cull_mask" default="4294967295">
+			Render layers of scene meshes included as occluders during [method bake].
+		</member>
+		<member name="viewing_cull_mask" type="int" setter="set_viewing_cull_mask" getter="get_viewing_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes receive baked ambient occlusion from this volume.
+		</member>
+		<member name="debug_mode" type="int" setter="set_debug_mode" getter="get_debug_mode" enum="BakedRTAO.DebugMode" default="0">
+			Visualizes baked ambient occlusion or bent normals in standalone mode.
+		</member>
+	</members>
+	<constants>
+		<constant name="BLEND_MULTIPLY" value="0" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_MIN" value="1" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_OVERRIDE" value="2" enum="BlendMode">
+		</constant>
+		<constant name="DEBUG_NONE" value="0" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_AO" value="1" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_BENT_NORMAL" value="2" enum="DebugMode">
+		</constant>
+	</constants>
+</class>

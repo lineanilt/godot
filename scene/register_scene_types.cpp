@@ -148,6 +148,7 @@
 #include "scene/resources/cylinder_shape.h"
 #include "scene/resources/default_theme/default_theme.h"
 #include "scene/resources/dynamic_font.h"
+#include "scene/resources/glsl_shader.h"
 #include "scene/resources/gradient.h"
 #include "scene/resources/height_map_shape.h"
 #include "scene/resources/line_shape_2d.h"
@@ -249,6 +250,9 @@ static Ref<ResourceFormatLoaderBMFont> resource_loader_bmfont;
 static Ref<ResourceFormatSaverShader> resource_saver_shader;
 static Ref<ResourceFormatLoaderShader> resource_loader_shader;
 
+static Ref<ResourceFormatSaverGLSLShader> resource_saver_glsl_shader;
+static Ref<ResourceFormatLoaderGLSLShader> resource_loader_glsl_shader;
+
 void register_scene_types() {
 	SceneStringNames::create();
 
@@ -278,6 +282,12 @@ void register_scene_types() {
 
 	resource_loader_shader.instance();
 	ResourceLoader::add_resource_format_loader(resource_loader_shader, true);
+
+	resource_saver_glsl_shader.instance();
+	ResourceSaver::add_resource_format_saver(resource_saver_glsl_shader, true);
+
+	resource_loader_glsl_shader.instance();
+	ResourceLoader::add_resource_format_loader(resource_loader_glsl_shader, true);
 
 	resource_loader_bmfont.instance();
 	ResourceLoader::add_resource_format_loader(resource_loader_bmfont, true);
@@ -531,6 +541,7 @@ void register_scene_types() {
 	AcceptDialog::set_swap_ok_cancel(GLOBAL_DEF_NOVAL("gui/common/swap_ok_cancel", bool(OS::get_singleton()->get_swap_ok_cancel())));
 
 	ClassDB::register_class<Shader>();
+	ClassDB::register_class<GLSLShader>();
 	ClassDB::register_class<VisualShader>();
 	ClassDB::register_virtual_class<VisualShaderNode>();
 	ClassDB::register_class<VisualShaderNodeCustom>();
@@ -877,6 +888,12 @@ void unregister_scene_types() {
 
 	ResourceLoader::remove_resource_format_loader(resource_loader_shader);
 	resource_loader_shader.unref();
+
+	ResourceSaver::remove_resource_format_saver(resource_saver_glsl_shader);
+	resource_saver_glsl_shader.unref();
+
+	ResourceLoader::remove_resource_format_loader(resource_loader_glsl_shader);
+	resource_loader_glsl_shader.unref();
 
 	ResourceLoader::remove_resource_format_loader(resource_loader_bmfont);
 	resource_loader_bmfont.unref();

@@ -1,0 +1,523 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GL43Server" inherits="Object" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Simplified OpenGL 4.3 compute shader, SSBO, and image load/store server for game code.
+	</brief_description>
+	<description>
+		Provides a streamlined, Godot-friendly interface to the shared OpenGL 4.3 Core context ([code]SharedGL43Context[/code]) for running compute shaders, Shader Storage Buffer Objects (SSBOs), Uniform Buffer Objects (UBOs), and image load/store operations alongside Godot's GLES3 renderer.
+		Accepts both [GL43Server]-created textures and standard Godot [Texture] resources (such as [ImageTexture] and [ViewportTexture]).
+		Check [method is_available] before issuing GPU work; only supported on desktop OpenGL 4.3+ drivers when running the GLES3 backend.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="begin">
+			<return type="bool" />
+			<description>
+				Switches to the shared GL 4.3 context once for a batch of calls, avoiding per-call context switches. Always pair with [method end].
+			</description>
+		</method>
+		<method name="bind_compute_shader">
+			<return type="void" />
+			<argument index="0" name="shader" type="RID" />
+			<description>
+				Binds a compute shader program created with [method create_compute_shader].
+			</description>
+		</method>
+		<method name="bind_image_texture">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="unit" type="int" default="0" />
+			<argument index="2" name="access" type="int" enum="GL43Server.ImageAccess" default="2" />
+			<argument index="3" name="format" type="int" enum="GL43Server.ImageFormat" default="0" />
+			<argument index="4" name="mip_level" type="int" default="0" />
+			<description>
+				Binds a [Texture] or texture [RID] to an image unit for [code]imageLoad[/code]/[code]imageStore[/code] in compute shaders (3D and 2D array textures are automatically bound as layered). Leave [code]format[/code] as [constant FORMAT_AUTO] to match the texture's format automatically.
+			</description>
+		</method>
+		<method name="bind_image_texture_layer">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="unit" type="int" default="0" />
+			<argument index="2" name="access" type="int" enum="GL43Server.ImageAccess" default="2" />
+			<argument index="3" name="layer" type="int" default="0" />
+			<argument index="4" name="format" type="int" enum="GL43Server.ImageFormat" default="0" />
+			<description>
+				Binds a single layer/slice of a 3D or 2D array texture as a 2D image unit.
+			</description>
+		</method>
+		<method name="bind_ssbo">
+			<return type="void" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="binding_index" type="int" />
+			<description>
+				Binds an SSBO to a [code]layout(std430, binding = N)[/code] slot.
+			</description>
+		</method>
+		<method name="bind_texture">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="unit" type="int" default="0" />
+			<argument index="2" name="uniform_name" type="String" default="&quot;&quot;" />
+			<description>
+				Binds a [Texture] or texture [RID] to a texture sampler unit, and optionally assigns [code]uniform_name[/code] on the currently bound compute shader.
+			</description>
+		</method>
+		<method name="bind_ubo">
+			<return type="void" />
+			<argument index="0" name="ubo" type="RID" />
+			<argument index="1" name="binding_index" type="int" />
+			<description>
+				Binds a UBO to a [code]layout(std140, binding = N)[/code] slot.
+			</description>
+		</method>
+		<method name="clear_ssbo">
+			<return type="void" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="clear_value" type="int" default="0" />
+			<description>
+				Fills an SSBO with a 32-bit unsigned integer value on the GPU.
+			</description>
+		</method>
+		<method name="clear_texture">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="color" type="Color" default="Color( 0, 0, 0, 0 )" />
+			<description>
+				Clears all pixels of a texture to [code]color[/code].
+			</description>
+		</method>
+		<method name="copy_ssbo">
+			<return type="void" />
+			<argument index="0" name="src_ssbo" type="RID" />
+			<argument index="1" name="dst_ssbo" type="RID" />
+			<argument index="2" name="byte_size" type="int" default="-1" />
+			<argument index="3" name="src_offset" type="int" default="0" />
+			<argument index="4" name="dst_offset" type="int" default="0" />
+			<description>
+				Copies bytes between two SSBOs directly on the GPU.
+			</description>
+		</method>
+		<method name="copy_texture">
+			<return type="void" />
+			<argument index="0" name="src_texture" type="Variant" />
+			<argument index="1" name="dst_texture" type="Variant" />
+			<argument index="2" name="src_mip" type="int" default="0" />
+			<argument index="3" name="dst_mip" type="int" default="0" />
+			<description>
+				Copies texels between two textures on the GPU.
+			</description>
+		</method>
+		<method name="create_compute_shader">
+			<return type="RID" />
+			<argument index="0" name="glsl_code" type="String" />
+			<description>
+				Compiles and links a GLSL 4.3 compute shader. Automatically prepends [code]#version 430 core[/code] if omitted.
+			</description>
+		</method>
+		<method name="create_ssbo">
+			<return type="RID" />
+			<argument index="0" name="size_bytes" type="int" default="0" />
+			<argument index="1" name="initial_data" type="Variant" default="null" />
+			<argument index="2" name="usage" type="int" enum="GL43Server.BufferUsage" default="0" />
+			<description>
+				Creates a Shader Storage Buffer Object. [code]initial_data[/code] may be [code]null[/code], a [PoolByteArray], [PoolIntArray], [PoolRealArray], [PoolVector2Array], [PoolVector3Array], [PoolColorArray], or a mixed [Array].
+			</description>
+		</method>
+		<method name="create_texture_2d">
+			<return type="RID" />
+			<argument index="0" name="width" type="int" />
+			<argument index="1" name="height" type="int" />
+			<argument index="2" name="format" type="int" enum="GL43Server.ImageFormat" default="2" />
+			<argument index="3" name="filter" type="int" enum="GL43Server.FilterMode" default="1" />
+			<argument index="4" name="wrap" type="int" enum="GL43Server.WrapMode" default="0" />
+			<description>
+				Creates a GPU-only 2D texture usable as both a sampler and an image load/store target. Pass [constant FILTER_LINEAR_MIPMAP] to allocate mipmaps.
+			</description>
+		</method>
+		<method name="create_texture_2d_array">
+			<return type="RID" />
+			<argument index="0" name="width" type="int" />
+			<argument index="1" name="height" type="int" />
+			<argument index="2" name="layers" type="int" />
+			<argument index="3" name="format" type="int" enum="GL43Server.ImageFormat" default="2" />
+			<argument index="4" name="filter" type="int" enum="GL43Server.FilterMode" default="1" />
+			<description>
+				Creates a GPU-only 2D texture array. Pass [constant FILTER_LINEAR_MIPMAP] to allocate mipmaps.
+			</description>
+		</method>
+		<method name="create_texture_3d">
+			<return type="RID" />
+			<argument index="0" name="width" type="int" />
+			<argument index="1" name="height" type="int" />
+			<argument index="2" name="depth" type="int" />
+			<argument index="3" name="format" type="int" enum="GL43Server.ImageFormat" default="2" />
+			<argument index="4" name="filter" type="int" enum="GL43Server.FilterMode" default="1" />
+			<description>
+				Creates a GPU-only 3D texture.
+			</description>
+		</method>
+		<method name="set_texture_sampling">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="filter" type="int" enum="GL43Server.FilterMode" default="1" />
+			<argument index="2" name="wrap" type="int" enum="GL43Server.WrapMode" default="0" />
+			<description>
+				Updates the filtering and wrap mode of a [Texture] or texture [RID].
+			</description>
+		</method>
+		<method name="create_ubo">
+			<return type="RID" />
+			<argument index="0" name="size_bytes" type="int" default="0" />
+			<argument index="1" name="initial_data" type="Variant" default="null" />
+			<argument index="2" name="usage" type="int" enum="GL43Server.BufferUsage" default="0" />
+			<description>
+				Creates a Uniform Buffer Object.
+			</description>
+		</method>
+		<method name="dispatch_compute">
+			<return type="void" />
+			<argument index="0" name="groups_x" type="int" />
+			<argument index="1" name="groups_y" type="int" default="1" />
+			<argument index="2" name="groups_z" type="int" default="1" />
+			<description>
+				Dispatches the currently bound compute shader with the exact workgroup counts.
+			</description>
+		</method>
+		<method name="dispatch_compute_for_size">
+			<return type="void" />
+			<argument index="0" name="width" type="int" />
+			<argument index="1" name="height" type="int" />
+			<argument index="2" name="depth" type="int" default="1" />
+			<argument index="3" name="local_size" type="Vector3" default="Vector3( 8, 8, 1 )" />
+			<description>
+				Convenience helper that rounds [code]ceil(width / local_size.x)[/code] etc. and dispatches the compute shader.
+			</description>
+		</method>
+		<method name="dispatch_compute_indirect">
+			<return type="void" />
+			<argument index="0" name="indirect_ssbo" type="RID" />
+			<argument index="1" name="byte_offset" type="int" default="0" />
+			<description>
+				Dispatches compute workgroups using 3 [code]uint[/code] counts stored in [code]indirect_ssbo[/code].
+			</description>
+		</method>
+		<method name="end">
+			<return type="void" />
+			<description>
+				Ends a batch started by [method begin] and syncs GPU work back to Godot's render context.
+			</description>
+		</method>
+		<method name="finish">
+			<return type="void" />
+			<description>
+				Blocks until all queued GL 4.3 GPU commands have completed.
+			</description>
+		</method>
+		<method name="flush">
+			<return type="void" />
+			<description>
+				Submits queued GL 4.3 commands to the GPU driver without blocking.
+			</description>
+		</method>
+		<method name="free_rid">
+			<return type="void" />
+			<argument index="0" name="rid" type="RID" />
+			<description>
+				Frees a shader, buffer, or texture [RID] created by [GL43Server].
+			</description>
+		</method>
+		<method name="generate_mipmaps">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<description>
+				Generates mipmaps on the GPU for a [Texture] or texture [RID].
+			</description>
+		</method>
+		<method name="get_last_error" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the most recent shader compile or link error message.
+			</description>
+		</method>
+		<method name="get_limits" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns hardware compute limits ([code]max_work_group_count[/code], [code]max_work_group_size[/code], [code]max_work_group_invocations[/code], [code]max_shared_memory_bytes[/code], [code]max_ssbo_bindings[/code], [code]max_image_units[/code]).
+			</description>
+		</method>
+		<method name="get_shader_log" qualifiers="const">
+			<return type="String" />
+			<argument index="0" name="shader" type="RID" />
+			<description>
+				Returns the compile/link error log for a specific shader [RID], or an empty string if valid.
+			</description>
+		</method>
+		<method name="get_ssbo_size" qualifiers="const">
+			<return type="int" />
+			<argument index="0" name="ssbo" type="RID" />
+			<description>
+				Returns the current allocated size in bytes of an SSBO or UBO.
+			</description>
+		</method>
+		<method name="get_texture_size" qualifiers="const">
+			<return type="Vector3" />
+			<argument index="0" name="texture" type="Variant" />
+			<description>
+				Returns [code]Vector3(width, height, depth)[/code] for a [Texture] or texture [RID].
+			</description>
+		</method>
+		<method name="is_available" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the shared OpenGL 4.3 Core context is active on the current machine and renderer.
+			</description>
+		</method>
+		<method name="is_rid_valid" qualifiers="const">
+			<return type="bool" />
+			<argument index="0" name="rid" type="RID" />
+			<description>
+				Returns [code]true[/code] if [code]rid[/code] is an active [GL43Server] resource.
+			</description>
+		</method>
+		<method name="is_shader_valid" qualifiers="const">
+			<return type="bool" />
+			<argument index="0" name="shader" type="RID" />
+			<description>
+				Returns [code]true[/code] if the compute shader compiled and linked successfully.
+			</description>
+		</method>
+		<method name="memory_barrier">
+			<return type="void" />
+			<argument index="0" name="barriers" type="int" default="2147483647" />
+			<description>
+				Inserts a GPU memory barrier so subsequent compute shaders or Godot passes observe prior image/SSBO writes.
+			</description>
+		</method>
+		<method name="pack_vec3_as_vec4" qualifiers="const">
+			<return type="PoolByteArray" />
+			<argument index="0" name="vectors" type="PoolVector3Array" />
+			<argument index="1" name="w" type="float" default="1.0" />
+			<description>
+				Packs a [PoolVector3Array] with 16-byte ([code]vec4[/code]) stride for GLSL [code]std430[/code] SSBOs.
+			</description>
+		</method>
+		<method name="read_ssbo">
+			<return type="PoolByteArray" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="byte_size" type="int" default="-1" />
+			<argument index="2" name="byte_offset" type="int" default="0" />
+			<description>
+				Reads raw bytes back from an SSBO on the render thread.
+			</description>
+		</method>
+		<method name="read_ssbo_floats">
+			<return type="PoolRealArray" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="float_count" type="int" default="-1" />
+			<argument index="2" name="byte_offset" type="int" default="0" />
+			<description>
+				Reads 32-bit floats back from an SSBO on the render thread.
+			</description>
+		</method>
+		<method name="read_ssbo_ints">
+			<return type="PoolIntArray" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="int_count" type="int" default="-1" />
+			<argument index="2" name="byte_offset" type="int" default="0" />
+			<description>
+				Reads 32-bit signed ints back from an SSBO on the render thread.
+			</description>
+		</method>
+		<method name="read_texture_2d">
+			<return type="Image" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="mip_level" type="int" default="0" />
+			<description>
+				Reads a 2D texture back from the GPU into an [Image] on the render thread.
+			</description>
+		</method>
+		<method name="reload_compute_shader">
+			<return type="bool" />
+			<argument index="0" name="shader" type="RID" />
+			<argument index="1" name="glsl_code" type="String" />
+			<description>
+				Recompiles an existing compute shader [RID] in place with new GLSL code.
+			</description>
+		</method>
+		<method name="resize_texture_2d">
+			<return type="void" />
+			<argument index="0" name="texture" type="RID" />
+			<argument index="1" name="width" type="int" />
+			<argument index="2" name="height" type="int" />
+			<description>
+				Resizes a 2D texture created by [method create_texture_2d].
+			</description>
+		</method>
+		<method name="set_uniform">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="value" type="Variant" />
+			<description>
+				Sets a uniform ([code]bool[/code], [code]int[/code], [code]float[/code], [code]Vector2[/code], [code]Vector3[/code], [code]Color[/code], [code]Plane[/code], [code]Quat[/code], [code]Rect2[/code], [code]Basis[/code], [code]Transform2D[/code], [code]Transform[/code], or typed arrays) on the currently bound compute shader.
+			</description>
+		</method>
+		<method name="set_uniform_color">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="color" type="Color" />
+			<argument index="2" name="to_linear" type="bool" default="false" />
+			<description>
+				Sets a [code]vec4[/code] color uniform, optionally converting from sRGB to linear space.
+			</description>
+		</method>
+		<method name="set_uniform_inv_ortho">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="size" type="float" />
+			<argument index="2" name="aspect" type="float" />
+			<argument index="3" name="z_near" type="float" />
+			<argument index="4" name="z_far" type="float" />
+			<description>
+				Sets an inverse orthographic [code]mat4[/code] projection uniform.
+			</description>
+		</method>
+		<method name="set_uniform_inv_projection">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="fov_degrees" type="float" />
+			<argument index="2" name="aspect" type="float" />
+			<argument index="3" name="z_near" type="float" />
+			<argument index="4" name="z_far" type="float" />
+			<description>
+				Sets an inverse perspective [code]mat4[/code] projection uniform matching Godot's [Camera] convention.
+			</description>
+		</method>
+		<method name="set_uniform_ortho">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="size" type="float" />
+			<argument index="2" name="aspect" type="float" />
+			<argument index="3" name="z_near" type="float" />
+			<argument index="4" name="z_far" type="float" />
+			<description>
+				Sets an orthographic [code]mat4[/code] projection uniform.
+			</description>
+		</method>
+		<method name="set_uniform_projection">
+			<return type="void" />
+			<argument index="0" name="name" type="String" />
+			<argument index="1" name="fov_degrees" type="float" />
+			<argument index="2" name="aspect" type="float" />
+			<argument index="3" name="z_near" type="float" />
+			<argument index="4" name="z_far" type="float" />
+			<description>
+				Sets a perspective [code]mat4[/code] projection uniform matching Godot's [Camera] convention.
+			</description>
+		</method>
+		<method name="unbind_compute_shader">
+			<return type="void" />
+			<description>
+				Unbinds the active compute shader.
+			</description>
+		</method>
+		<method name="unbind_image_texture">
+			<return type="void" />
+			<argument index="0" name="unit" type="int" default="0" />
+			<description>
+				Unbinds an image texture from [code]unit[/code].
+			</description>
+		</method>
+		<method name="unbind_ssbo">
+			<return type="void" />
+			<argument index="0" name="binding_index" type="int" />
+			<description>
+				Unbinds an SSBO from [code]binding_index[/code].
+			</description>
+		</method>
+		<method name="unbind_texture">
+			<return type="void" />
+			<argument index="0" name="unit" type="int" default="0" />
+			<description>
+				Unbinds any texture bound to sampler [code]unit[/code].
+			</description>
+		</method>
+		<method name="unbind_ubo">
+			<return type="void" />
+			<argument index="0" name="binding_index" type="int" />
+			<description>
+				Unbinds a UBO from [code]binding_index[/code].
+			</description>
+		</method>
+		<method name="upload_ssbo">
+			<return type="void" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="data" type="Variant" />
+			<argument index="2" name="usage" type="int" enum="GL43Server.BufferUsage" default="0" />
+			<description>
+				Uploads data into an SSBO, automatically reusing allocation via [code]glBufferSubData[/code] if size and usage match.
+			</description>
+		</method>
+		<method name="upload_ssbo_subdata">
+			<return type="void" />
+			<argument index="0" name="ssbo" type="RID" />
+			<argument index="1" name="byte_offset" type="int" />
+			<argument index="2" name="data" type="Variant" />
+			<description>
+				Updates a slice of an existing SSBO starting at [code]byte_offset[/code].
+			</description>
+		</method>
+		<method name="upload_texture_2d">
+			<return type="void" />
+			<argument index="0" name="texture" type="Variant" />
+			<argument index="1" name="image" type="Image" />
+			<argument index="2" name="mip_level" type="int" default="0" />
+			<description>
+				Uploads an [Image] into a 2D texture.
+			</description>
+		</method>
+		<method name="upload_ubo">
+			<return type="void" />
+			<argument index="0" name="ubo" type="RID" />
+			<argument index="1" name="data" type="Variant" />
+			<argument index="2" name="usage" type="int" enum="GL43Server.BufferUsage" default="0" />
+			<description>
+				Uploads data into a UBO.
+			</description>
+		</method>
+	</methods>
+	<constants>
+		<constant name="USAGE_DYNAMIC" value="0" enum="BufferUsage" />
+		<constant name="USAGE_STATIC" value="1" enum="BufferUsage" />
+		<constant name="USAGE_STREAM" value="2" enum="BufferUsage" />
+		<constant name="ACCESS_READ_ONLY" value="0" enum="ImageAccess" />
+		<constant name="ACCESS_WRITE_ONLY" value="1" enum="ImageAccess" />
+		<constant name="ACCESS_READ_WRITE" value="2" enum="ImageAccess" />
+		<constant name="FORMAT_AUTO" value="0" enum="ImageFormat" />
+		<constant name="FORMAT_RGBA8" value="1" enum="ImageFormat" />
+		<constant name="FORMAT_RGBA16F" value="2" enum="ImageFormat" />
+		<constant name="FORMAT_RGBA32F" value="3" enum="ImageFormat" />
+		<constant name="FORMAT_RG8" value="4" enum="ImageFormat" />
+		<constant name="FORMAT_RG16F" value="5" enum="ImageFormat" />
+		<constant name="FORMAT_RG32F" value="6" enum="ImageFormat" />
+		<constant name="FORMAT_R8" value="7" enum="ImageFormat" />
+		<constant name="FORMAT_R16F" value="8" enum="ImageFormat" />
+		<constant name="FORMAT_R32F" value="9" enum="ImageFormat" />
+		<constant name="FORMAT_R32I" value="10" enum="ImageFormat" />
+		<constant name="FORMAT_R32UI" value="11" enum="ImageFormat" />
+		<constant name="FORMAT_RGBA16UI" value="12" enum="ImageFormat" />
+		<constant name="FORMAT_RGBA32UI" value="13" enum="ImageFormat" />
+		<constant name="FILTER_NEAREST" value="0" enum="FilterMode" />
+		<constant name="FILTER_LINEAR" value="1" enum="FilterMode" />
+		<constant name="FILTER_LINEAR_MIPMAP" value="2" enum="FilterMode" />
+		<constant name="WRAP_CLAMP" value="0" enum="WrapMode" />
+		<constant name="WRAP_REPEAT" value="1" enum="WrapMode" />
+		<constant name="WRAP_MIRROR" value="2" enum="WrapMode" />
+		<constant name="BARRIER_IMAGE" value="1" enum="BarrierFlags" />
+		<constant name="BARRIER_SSBO" value="2" enum="BarrierFlags" />
+		<constant name="BARRIER_TEXTURE" value="4" enum="BarrierFlags" />
+		<constant name="BARRIER_BUFFER_UPDATE" value="8" enum="BarrierFlags" />
+		<constant name="BARRIER_UBO" value="16" enum="BarrierFlags" />
+		<constant name="BARRIER_ALL" value="2147483647" enum="BarrierFlags" />
+	</constants>
+</class>

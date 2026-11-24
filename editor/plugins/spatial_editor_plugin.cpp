@@ -28,6 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include <atomic>
+
 #include "spatial_editor_plugin.h"
 
 #include "core/math/camera_matrix.h"
@@ -80,6 +82,8 @@
 #define MAX_FOV 179
 
 bool SpatialEditor::_prevent_gizmo_generation = false;
+
+extern std::atomic<int> vs_shader_compiles_pending;
 
 void ViewportNavigationControl::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE) {
@@ -280,12 +284,269 @@ void ViewportRotationControl::_notification(int p_what) {
 	}
 }
 
+static void _draw_aa_circle(Control *p_control, const Vector2 &p_center, float p_radius, const Color &p_color, int p_segments = 32) {
+	if (p_radius <= 0.0f || p_segments < 3) {
+		return;
+	}
+
+	const float r_in = MAX(0.0f, p_radius - 0.5f);
+	const float r_out = p_radius + 0.5f;
+	const Color edge_color(p_color.r, p_color.g, p_color.b, 0.0f);
+
+	Vector<Point2> points;
+	Vector<Color> colors;
+	Vector<int> indices;
+
+	points.resize(1 + p_segments * 2);
+	colors.resize(1 + p_segments * 2);
+	indices.resize(p_segments * 9);
+
+	points.write[0] = p_center;
+	colors.write[0] = p_color;
+
+	for (int i = 0; i < p_segments; i++) {
+		const float angle = (Math_PI * 2.0f * i) / p_segments;
+		const Vector2 dir(Math::cos(angle), Math::sin(angle));
+
+		const int in_idx = 1 + i;
+		const int out_idx = 1 + p_segments + i;
+		points.write[in_idx] = p_center + dir * r_in;
+		colors.write[in_idx] = p_color;
+		points.write[out_idx] = p_center + dir * r_out;
+		colors.write[out_idx] = edge_color;
+
+		const int next_i = (i + 1) % p_segments;
+		const int next_in = 1 + next_i;
+		const int next_out = 1 + p_segments + next_i;
+
+		const int base = i * 9;
+		indices.write[base + 0] = 0;
+		indices.write[base + 1] = in_idx;
+		indices.write[base + 2] = next_in;
+
+		indices.write[base + 3] = in_idx;
+		indices.write[base + 4] = out_idx;
+		indices.write[base + 5] = next_out;
+
+		indices.write[base + 6] = in_idx;
+		indices.write[base + 7] = next_out;
+		indices.write[base + 8] = next_in;
+	}
+
+	VisualServer::get_singleton()->canvas_item_add_triangle_array(p_control->get_canvas_item(), indices, points, colors);
+}
+
+static void _draw_aa_outlined_circle(Control *p_control, const Vector2 &p_center, float p_inner_radius, float p_outer_radius, const Color &p_inner_color, const Color &p_outer_color, int p_segments = 32) {
+	if (p_outer_radius <= 0.0f || p_segments < 3) {
+		return;
+	}
+
+	const float r3 = p_outer_radius + 0.5f;
+	const float r2 = MAX(0.0f, p_outer_radius - 0.5f);
+	const float r1 = CLAMP(p_inner_radius + 0.5f, 0.0f, r2);
+	const float r0 = CLAMP(p_inner_radius - 0.5f, 0.0f, r1);
+	const Color edge_color(p_outer_color.r, p_outer_color.g, p_outer_color.b, 0.0f);
+
+	Vector<Point2> points;
+	Vector<Color> colors;
+	Vector<int> indices;
+
+	points.resize(1 + p_segments * 4);
+	colors.resize(1 + p_segments * 4);
+	indices.resize(p_segments * 21);
+
+	points.write[0] = p_center;
+	colors.write[0] = p_inner_color;
+
+	for (int i = 0; i < p_segments; i++) {
+		const float angle = (Math_PI * 2.0f * i) / p_segments;
+		const Vector2 dir(Math::cos(angle), Math::sin(angle));
+
+		const int i0 = 1 + i;
+		const int i1 = 1 + p_segments + i;
+		const int i2 = 1 + p_segments * 2 + i;
+		const int i3 = 1 + p_segments * 3 + i;
+
+		points.write[i0] = p_center + dir * r0;
+		colors.write[i0] = p_inner_color;
+		points.write[i1] = p_center + dir * r1;
+		colors.write[i1] = p_outer_color;
+		points.write[i2] = p_center + dir * r2;
+		colors.write[i2] = p_outer_color;
+		points.write[i3] = p_center + dir * r3;
+		colors.write[i3] = edge_color;
+
+		const int next_i = (i + 1) % p_segments;
+		const int n0 = 1 + next_i;
+		const int n1 = 1 + p_segments + next_i;
+		const int n2 = 1 + p_segments * 2 + next_i;
+		const int n3 = 1 + p_segments * 3 + next_i;
+
+		int b = i * 21;
+		indices.write[b++] = 0;
+		indices.write[b++] = i0;
+		indices.write[b++] = n0;
+
+		indices.write[b++] = i0;
+		indices.write[b++] = i1;
+		indices.write[b++] = n1;
+		indices.write[b++] = i0;
+		indices.write[b++] = n1;
+		indices.write[b++] = n0;
+
+		indices.write[b++] = i1;
+		indices.write[b++] = i2;
+		indices.write[b++] = n2;
+		indices.write[b++] = i1;
+		indices.write[b++] = n2;
+		indices.write[b++] = n1;
+
+		indices.write[b++] = i2;
+		indices.write[b++] = i3;
+		indices.write[b++] = n3;
+		indices.write[b++] = i2;
+		indices.write[b++] = n3;
+		indices.write[b++] = n2;
+	}
+
+	VisualServer::get_singleton()->canvas_item_add_triangle_array(p_control->get_canvas_item(), indices, points, colors);
+}
+
+static void _draw_aa_line(Control *p_control, const Vector2 &p_from, const Vector2 &p_to, const Color &p_color, float p_width) {
+	const Vector2 delta = p_to - p_from;
+	const real_t len = delta.length();
+	if (len < CMP_EPSILON) {
+		return;
+	}
+
+	const Vector2 dir = delta / len;
+	const Vector2 normal = Vector2(-dir.y, dir.x);
+	const real_t half_width = MAX(0.0f, (p_width - 1.0f) * 0.5f);
+	const real_t aa_width = half_width + 1.0f;
+	const Color edge_color(p_color.r, p_color.g, p_color.b, 0.0f);
+
+	Vector<Point2> pts;
+	pts.resize(4);
+	Vector<Color> cols;
+	cols.resize(4);
+	const Vector<Point2> uvs;
+
+	if (half_width > 0.0f) {
+		pts.write[0] = p_from - normal * half_width;
+		pts.write[1] = p_to - normal * half_width;
+		pts.write[2] = p_to + normal * half_width;
+		pts.write[3] = p_from + normal * half_width;
+		cols.write[0] = p_color;
+		cols.write[1] = p_color;
+		cols.write[2] = p_color;
+		cols.write[3] = p_color;
+		p_control->draw_primitive(pts, cols, uvs);
+	}
+
+	pts.write[0] = p_from - normal * aa_width;
+	pts.write[1] = p_to - normal * aa_width;
+	pts.write[2] = p_to - normal * half_width;
+	pts.write[3] = p_from - normal * half_width;
+	cols.write[0] = edge_color;
+	cols.write[1] = edge_color;
+	cols.write[2] = p_color;
+	cols.write[3] = p_color;
+	p_control->draw_primitive(pts, cols, uvs);
+
+	pts.write[0] = p_from + normal * half_width;
+	pts.write[1] = p_to + normal * half_width;
+	pts.write[2] = p_to + normal * aa_width;
+	pts.write[3] = p_from + normal * aa_width;
+	cols.write[0] = p_color;
+	cols.write[1] = p_color;
+	cols.write[2] = edge_color;
+	cols.write[3] = edge_color;
+	p_control->draw_primitive(pts, cols, uvs);
+}
+
+class ShaderCompileBadge : public Control {
+	GDCLASS(ShaderCompileBadge, Control);
+
+	Label *label = nullptr;
+
+protected:
+	void _notification(int p_what) {
+		if (p_what == NOTIFICATION_DRAW) {
+			const Size2 sz = get_size();
+			const Color bg(0.08, 0.09, 0.11, 0.85);
+			const Color border(1.0, 1.0, 1.0, 0.18);
+
+			Vector<Point2> pts;
+			pts.resize(4);
+			pts.write[0] = Point2(0, 0);
+			pts.write[1] = Point2(sz.x, 0);
+			pts.write[2] = Point2(sz.x, sz.y);
+			pts.write[3] = Point2(0, sz.y);
+
+			Vector<Color> cols;
+			cols.resize(4);
+			for (int i = 0; i < 4; i++) {
+				cols.write[i] = bg;
+			}
+
+			const Vector<Point2> uvs;
+			draw_primitive(pts, cols, uvs);
+
+			_draw_aa_line(this, Point2(0.5f, 0.5f), Point2(sz.x - 0.5f, 0.5f), border, 1.0f);
+			_draw_aa_line(this, Point2(sz.x - 0.5f, 0.5f), Point2(sz.x - 0.5f, sz.y - 0.5f), border, 1.0f);
+			_draw_aa_line(this, Point2(sz.x - 0.5f, sz.y - 0.5f), Point2(0.5f, sz.y - 0.5f), border, 1.0f);
+			_draw_aa_line(this, Point2(0.5f, sz.y - 0.5f), Point2(0.5f, 0.5f), border, 1.0f);
+		}
+	}
+
+public:
+	int last_count = -1;
+	float hide_cooldown = 0.0f;
+
+	void update_status(int p_pending) {
+		if (p_pending == last_count) {
+			return;
+		}
+		last_count = p_pending;
+
+		label->set_text(p_pending == 1 ? TTR("Compiling 1 shader...") : vformat(TTR("Compiling %d shaders..."), p_pending));
+
+		const Size2 pad = Vector2(10.0f, 5.0f) * EDSCALE;
+		const Size2 text_sz = label->get_combined_minimum_size();
+		const Size2 total_sz = text_sz + pad * 2.0f;
+
+		label->set_position(pad);
+		label->set_size(text_sz);
+
+		const float outer = 10.0f * EDSCALE;
+		set_margin(MARGIN_RIGHT, -outer);
+		set_margin(MARGIN_BOTTOM, -outer);
+		set_margin(MARGIN_LEFT, -outer - total_sz.x);
+		set_margin(MARGIN_TOP, -outer - total_sz.y);
+
+		update();
+	}
+
+	ShaderCompileBadge() {
+		set_mouse_filter(MOUSE_FILTER_IGNORE);
+		set_anchor(MARGIN_LEFT, 1.0f);
+		set_anchor(MARGIN_TOP, 1.0f);
+		set_anchor(MARGIN_RIGHT, 1.0f);
+		set_anchor(MARGIN_BOTTOM, 1.0f);
+
+		label = memnew(Label);
+		label->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		label->add_color_override("font_color", Color(0.95, 0.95, 0.95));
+		add_child(label);
+	}
+};
+
 void ViewportRotationControl::_draw() {
-	Vector2i center = get_size() / 2.0;
-	float radius = get_size().x / 2.0;
+	const Vector2 center = get_size() / 2.0f;
+	const float radius = get_size().x / 2.0f;
 
 	if (focused_axis > -2 || orbiting_index != -1) {
-		draw_circle(center, radius, Color(0.5, 0.5, 0.5, 0.25));
+		_draw_aa_circle(this, center, radius, Color(0.5, 0.5, 0.5, 0.25), 64);
 	}
 
 	Vector<Axis2D> axis_to_draw;
@@ -306,31 +567,36 @@ void ViewportRotationControl::_draw_axis(const Axis2D &p_axis) {
 
 	if (positive) {
 		// Draw axis lines for the positive axes.
-		const Vector2i center = get_size() / 2.0;
-		draw_line(center, p_axis.screen_point, c, 1.5 * EDSCALE, true);
+		const Vector2 center = get_size() / 2.0f;
+		const Vector2 axis_pos = p_axis.screen_point;
+		const Vector2 delta = axis_pos - center;
+		const real_t len = delta.length();
+		if (len > AXIS_CIRCLE_RADIUS - 0.5f) {
+			const Vector2 line_end = axis_pos - (delta / len) * MAX(0.0f, AXIS_CIRCLE_RADIUS - 0.5f);
+			_draw_aa_line(this, center, line_end, c, 1.5 * EDSCALE);
+		}
 
-		draw_circle(p_axis.screen_point, AXIS_CIRCLE_RADIUS, c);
+		_draw_aa_circle(this, axis_pos, AXIS_CIRCLE_RADIUS, c);
 
 		// Draw the axis letter for the positive axes.
 		const String axis_name = direction == 0 ? "X" : (direction == 1 ? "Y" : "Z");
-		draw_char(get_font("rotation_control", "EditorFonts"), p_axis.screen_point + Vector2(-4.0, 5.0) * EDSCALE, axis_name, "", Color(0.0, 0.0, 0.0, alpha));
+		draw_char(get_font("rotation_control", "EditorFonts"), axis_pos + Vector2(-4.0, 5.0) * EDSCALE, axis_name, "", Color(0.0, 0.0, 0.0, alpha));
 	} else {
 		// Draw an outline around the negative axes.
-		draw_circle(p_axis.screen_point, AXIS_CIRCLE_RADIUS, c);
-		draw_circle(p_axis.screen_point, AXIS_CIRCLE_RADIUS * 0.8, c.darkened(0.4));
+		_draw_aa_outlined_circle(this, p_axis.screen_point, AXIS_CIRCLE_RADIUS * 0.8f, AXIS_CIRCLE_RADIUS, c.darkened(0.4), c);
 	}
 }
 
 void ViewportRotationControl::_get_sorted_axis(Vector<Axis2D> &r_axis) {
-	Vector2i center = get_size() / 2.0;
-	float radius = get_size().x / 2.0;
+	const Vector2 center = get_size() / 2.0f;
+	const float radius = get_size().x / 2.0f;
 
-	float axis_radius = radius - AXIS_CIRCLE_RADIUS - 2.0 * EDSCALE;
+	const float axis_radius = radius - AXIS_CIRCLE_RADIUS - 2.0f * EDSCALE;
 	Basis camera_basis = viewport->to_camera_transform(viewport->cursor).get_basis().inverse();
 
 	for (int i = 0; i < 3; ++i) {
 		Vector3 axis_3d = camera_basis.get_axis(i);
-		Vector2i axis_vector = Vector2(axis_3d.x, -axis_3d.y) * axis_radius;
+		const Vector2 axis_vector = Vector2(axis_3d.x, -axis_3d.y) * axis_radius;
 
 		if (Math::abs(axis_3d.z) < 1.0) {
 			Axis2D pos_axis;
@@ -2997,11 +3263,67 @@ void SpatialEditorViewport::_notification(int p_what) {
 
 		// FPS Counter.
 		bool show_fps = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_FPS));
+		const int pending_shaders = vs_shader_compiles_pending.load(std::memory_order_relaxed);
+		if (surface) {
+			ShaderCompileBadge *badge = nullptr;
+			for (int i = 0; i < surface->get_child_count(); i++) {
+				badge = Object::cast_to<ShaderCompileBadge>(surface->get_child(i));
+				if (badge) {
+					break;
+				}
+			}
+
+			if (pending_shaders > 0) {
+				if (!badge) {
+					badge = memnew(ShaderCompileBadge);
+					surface->add_child(badge);
+				}
+				badge->update_status(pending_shaders);
+				badge->show();
+				badge->hide_cooldown = 0.25f;
+				badge->update();
+			} else if (badge && badge->is_visible()) {
+				badge->hide_cooldown -= delta;
+				if (badge->hide_cooldown <= 0.0f) {
+					badge->hide();
+				}
+			}
+		}
+
 		fps_label->set_visible(show_fps);
 
 		if (show_fps) {
+			static uint64_t last_frame = 0;
+			static uint64_t last_ticks = 0;
+			static uint64_t accum_ticks = 0;
+			static uint32_t accum_frames = 0;
+			static double display_ms = 0.0;
+			static bool has_sample = false;
+
+			const uint64_t current_frame = Engine::get_singleton()->get_idle_frames();
+			if (current_frame != last_frame) {
+				const uint64_t current_ticks = OS::get_singleton()->get_ticks_usec();
+				if (last_ticks != 0 && current_frame == last_frame + 1) {
+					accum_ticks += (current_ticks - last_ticks);
+					accum_frames++;
+					if (!has_sample || accum_ticks >= 500000) { // Update every 0.5s.
+						display_ms = (accum_ticks / 1000.0) / accum_frames;
+						accum_ticks = 0;
+						accum_frames = 0;
+						has_sample = true;
+					}
+				} else {
+					display_ms = delta * 1000.0;
+					accum_ticks = 0;
+					accum_frames = 0;
+					has_sample = false;
+				}
+				last_ticks = current_ticks;
+				last_frame = current_frame;
+			}
+
 			const float fps = Engine::get_singleton()->get_frames_per_second();
-			fps_label->set_text(vformat(TTR("FPS: %d (%s ms)"), fps, rtos(1000.0f / fps).pad_decimals(2)));
+			fps_label->set_text(vformat(TTR("FPS: %d (%s ms)"), fps, rtos(display_ms).pad_decimals(2)));
 			// Middle point is at 60 FPS.
 			fps_label->add_color_override(
 					"font_color",
@@ -3657,7 +3979,6 @@ void SpatialEditorViewport::_toggle_camera_preview(bool p_activate) {
 
 void SpatialEditorViewport::_toggle_cinema_preview(bool p_activate) {
 	previewing_cinema = p_activate;
-	_update_navigation_controls_visibility();
 
 	if (!previewing_cinema) {
 		if (previewing != nullptr) {
@@ -3665,6 +3986,7 @@ void SpatialEditorViewport::_toggle_cinema_preview(bool p_activate) {
 		}
 
 		previewing = nullptr;
+		previewing_camera = false;
 		VS::get_singleton()->viewport_attach_camera(viewport->get_viewport_rid(), camera->get_camera()); //restore
 		preview_camera->set_pressed(false);
 		if (!preview) {
@@ -3675,6 +3997,8 @@ void SpatialEditorViewport::_toggle_cinema_preview(bool p_activate) {
 		view_menu->show();
 		surface->update();
 	}
+
+	_update_navigation_controls_visibility();
 }
 
 void SpatialEditorViewport::_selection_result_pressed(int p_result) {
@@ -3885,10 +4209,12 @@ void SpatialEditorViewport::set_state(const Dictionary &p_state) {
 	if (preview_camera->is_connected("toggled", this, "_toggle_camera_preview")) {
 		preview_camera->disconnect("toggled", this, "_toggle_camera_preview");
 	}
+	previewing_camera = false;
 	if (p_state.has("previewing")) {
 		Node *pv = EditorNode::get_singleton()->get_edited_scene()->get_node(p_state["previewing"]);
 		if (Object::cast_to<Camera>(pv)) {
 			previewing = Object::cast_to<Camera>(pv);
+			previewing_camera = true;
 			previewing->connect("tree_exiting", this, "_preview_exited_scene");
 			VS::get_singleton()->viewport_attach_camera(viewport->get_viewport_rid(), previewing->get_camera()); //replace
 			surface->update();
@@ -4523,7 +4849,9 @@ SpatialEditorViewport::SpatialEditorViewport(SpatialEditor *p_spatial_editor, Ed
 	preview_camera->set_h_size_flags(0);
 	preview_camera->hide();
 	preview_camera->connect("toggled", this, "_toggle_camera_preview");
+	preview = nullptr;
 	previewing = nullptr;
+	previewing_camera = false;
 	gizmo_scale = 1.0;
 
 	preview_node = nullptr;

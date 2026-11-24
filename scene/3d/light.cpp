@@ -341,9 +341,6 @@ void Light::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_projector", "projector"), &Light::set_projector);
 	ClassDB::bind_method(D_METHOD("get_projector"), &Light::get_projector);
 
-	ClassDB::bind_method(D_METHOD("set_projector_preset", "preset"), &Light::set_projector_preset);
-	ClassDB::bind_method(D_METHOD("get_projector_preset"), &Light::get_projector_preset);
-
 	ClassDB::bind_method(D_METHOD("set_projector_color_2", "color"), &Light::set_projector_color_2);
 	ClassDB::bind_method(D_METHOD("get_projector_color_2"), &Light::get_projector_color_2);
 	ClassDB::bind_method(D_METHOD("set_color_2", "color"), &Light::set_projector_color_2);
@@ -435,7 +432,6 @@ void Light::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shadow_reverse_cull_face"), "set_shadow_reverse_cull_face", "get_shadow_reverse_cull_face");
 	ADD_GROUP("Projector", "projector_");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "projector", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_projector", "get_projector");
-	ADD_PROPERTYI(PropertyInfo(Variant::INT, "projector_preset", PROPERTY_HINT_RANGE, "0,20,1"), "set_param", "get_param", PARAM_PROJECTOR_PRESET);
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "projector_color_2"), "set_projector_color_2", "get_projector_color_2");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "projector_uv_scale"), "set_projector_uv_scale", "get_projector_uv_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "projector_uv_offset"), "set_projector_uv_offset", "get_projector_uv_offset");
@@ -476,7 +472,6 @@ void Light::_bind_methods() {
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_FADE_START);
 	BIND_ENUM_CONSTANT(PARAM_SHADOW_BLUR);
 	BIND_ENUM_CONSTANT(PARAM_SQUARE_SHAPE);
-	BIND_ENUM_CONSTANT(PARAM_PROJECTOR_PRESET);
 	BIND_ENUM_CONSTANT(PARAM_MAX);
 
 	BIND_ENUM_CONSTANT(BLOB_SHADOW_PARAM_RANGE_HARDNESS);
@@ -494,13 +489,6 @@ void Light::set_square_shape(bool p_enable) {
 }
 bool Light::is_square_shape() const {
 	return get_param(PARAM_SQUARE_SHAPE) > 0.5;
-}
-
-void Light::set_projector_preset(int p_preset) {
-	set_param(PARAM_PROJECTOR_PRESET, p_preset);
-}
-int Light::get_projector_preset() const {
-	return int(get_param(PARAM_PROJECTOR_PRESET));
 }
 
 void Light::set_projector_color_2(const Color &p_color) {
@@ -635,7 +623,6 @@ Light::Light(VisualServer::LightType p_type) {
 	set_param(PARAM_SHADOW_BIAS, 0.15);
 	set_param(PARAM_SHADOW_BLUR, 1.0);
 	set_param(PARAM_SQUARE_SHAPE, 0.0);
-	set_param(PARAM_PROJECTOR_PRESET, 0.0);
 	projector_color_2 = Color(0.0, 0.0, 0.0, 1.0);
 	projector_uv_scale = Vector2(1, 1);
 	projector_uv_offset = Vector2(0, 0);

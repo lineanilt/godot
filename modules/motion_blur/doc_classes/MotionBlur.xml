@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MotionBlur" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Real-time per-pixel camera and object motion blur using OpenGL 4.3 velocity rasterization and compute shaders.
+	</brief_description>
+	<description>
+		Computes per-pixel screen-space motion vectors for camera movement (including sky), rigid [MeshInstance]s, [MultiMeshInstance]s, and animated skinned [Skeleton] meshes using raw OpenGL 4.3 rasterization and TileMax/NeighborMax compute shaders.
+		Automatically composites a depth-aware reconstruction filter onto the active viewport before 2D UI, or exposes the velocity and neighbor-max buffers via [method get_velocity_texture] and [method get_neighbor_max_texture].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_neighbor_max_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F tile NeighborMax velocity [Texture] (RG = dilated UV velocity, A = speed in pixels).
+			</description>
+		</method>
+		<method name="get_velocity_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F per-pixel velocity [Texture] (RG = UV velocity, B = linear view-space depth, A = speed in pixels).
+			</description>
+		</method>
+		<method name="reset_history">
+			<return type="void" />
+			<description>
+				Clears stored previous-frame camera and object transforms/poses. Call this immediately after camera cuts or teleports to prevent 1-frame motion streaks.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="alpha_scissor_support" type="bool" setter="set_alpha_scissor_support" getter="get_alpha_scissor_support" default="true">
+			Respects [SpatialMaterial] alpha-scissor cutouts in the velocity/depth pass.
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			Automatically composites motion blur onto the active viewport before 2D UI. Disable if manually sampling [method get_velocity_texture].
+		</member>
+		<member name="camera_motion" type="bool" setter="set_camera_motion" getter="get_camera_motion" default="true">
+			Includes camera translation and rotation in per-pixel velocity (including sky motion).
+		</member>
+		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes are included in the velocity pass.
+		</member>
+		<member name="debug_mode" type="int" setter="set_debug_mode" getter="get_debug_mode" enum="MotionBlur.DebugMode" default="0">
+			Visualizes internal velocity buffers for debugging.
+		</member>
+		<member name="depth_softness" type="float" setter="set_depth_softness" getter="get_depth_softness" default="0.15">
+			Depth comparison tolerance (in meters) used to prevent background blur from bleeding onto static foreground edges.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables real-time motion blur inside the 3D editor viewport.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Master toggle for velocity generation and motion blur compositing.
+		</member>
+		<member name="fps_compensation" type="bool" setter="set_fps_compensation" getter="get_fps_compensation" default="false">
+			Scales velocity relative to [member target_fps] so shutter length stays consistent across varying frame rates.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			Shutter strength multiplier applied to motion vectors.
+		</member>
+		<member name="jitter" type="float" setter="set_jitter" getter="get_jitter" default="1.0">
+			Per-pixel interleaved gradient noise jitter used to eliminate banding at lower sample counts.
+		</member>
+		<member name="max_velocity_px" type="float" setter="set_max_velocity_px" getter="get_max_velocity_px" default="64.0">
+			Maximum per-pixel blur length in full-resolution pixels.
+		</member>
+		<member name="min_velocity_px" type="float" setter="set_min_velocity_px" getter="get_min_velocity_px" default="0.5">
+			Tile speed threshold (in pixels) below which regions bypass blur sampling.
+		</member>
+		<member name="object_motion" type="bool" setter="set_object_motion" getter="get_object_motion" default="true">
+			Includes per-object rigid, MultiMesh, and skeletal motion in per-pixel velocity.
+		</member>
+		<member name="samples" type="int" setter="set_samples" getter="get_samples" default="15">
+			Number of reconstruction taps per pixel.
+		</member>
+		<member name="shutter_offset" type="float" setter="set_shutter_offset" getter="get_shutter_offset" default="0.0">
+			Shifts the shutter sampling window ([code]0.0[/code] = centered, [code]-0.5[/code] = trailing behind, [code]0.5[/code] = leading ahead).
+		</member>
+		<member name="skinned_meshes" type="bool" setter="set_skinned_meshes" getter="get_skinned_meshes" default="true">
+			Tracks previous-frame posed vertices for animated skeletal meshes.
+		</member>
+		<member name="target_fps" type="float" setter="set_target_fps" getter="get_target_fps" default="60.0">
+			Reference frame rate used when [member fps_compensation] is enabled.
+		</member>
+		<member name="tile_size" type="int" setter="set_tile_size" getter="get_tile_size" enum="MotionBlur.TileSize" default="16">
+			Tile dimension used for TileMax and NeighborMax velocity dilation.
+		</member>
+		<member name="velocity_scale" type="float" setter="set_velocity_scale" getter="get_velocity_scale" default="1.0">
+			Resolution scale of the internal velocity and depth buffer relative to the active viewport.
+		</member>
+	</members>
+	<constants>
+		<constant name="TILE_8" value="8" enum="TileSize">
+		</constant>
+		<constant name="TILE_16" value="16" enum="TileSize">
+		</constant>
+		<constant name="TILE_24" value="24" enum="TileSize">
+		</constant>
+		<constant name="TILE_32" value="32" enum="TileSize">
+		</constant>
+		<constant name="DEBUG_NONE" value="0" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_VELOCITY" value="1" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_NEIGHBOR_MAX" value="2" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_SPEED" value="3" enum="DebugMode">
+		</constant>
+	</constants>
+</class>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LocalRTAO" inherits="Spatial" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Localized 3D ambient occlusion region evaluated by RTAO and BakedRTAO.
+	</brief_description>
+	<description>
+		Defines a localized 3D volume (Box, Sphere, Ellipsoid, Cylinder, or Cone) that either applies direct artistic ambient occlusion ([constant MODE_DIRECT]) or modulates real-time ray-traced AO radius and intensity ([constant MODE_MODULATE_TRACE]).
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+	</methods>
+	<members>
+		<member name="ao_color" type="Color" setter="set_ao_color" getter="get_ao_color" default="Color( 0, 0, 0, 1 )">
+			Occlusion color applied in [constant MODE_DIRECT].
+		</member>
+		<member name="blend_mode" type="int" setter="set_blend_mode" getter="get_blend_mode" enum="LocalRTAO.BlendMode" default="0">
+			Blending operation used in [constant MODE_DIRECT].
+		</member>
+		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="4294967295">
+			Camera visibility layers in which this volume is evaluated.
+		</member>
+		<member name="edge_falloff" type="float" setter="set_edge_falloff" getter="get_edge_falloff" default="0.25">
+			Smooth falloff fraction near the volume boundary.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Toggles evaluation of this local AO volume.
+		</member>
+		<member name="extents" type="Vector3" setter="set_extents" getter="get_extents" default="Vector3( 2, 2, 2 )">
+			Half-extents of the shape in local space.
+		</member>
+		<member name="intensity_multiplier" type="float" setter="set_intensity_multiplier" getter="get_intensity_multiplier" default="1.0">
+			Multiplier applied to [member RTAO.intensity] inside this volume when [member mode] is [constant MODE_MODULATE_TRACE].
+		</member>
+		<member name="mode" type="int" setter="set_mode" getter="get_mode" enum="LocalRTAO.Mode" default="0">
+			Determines whether the volume applies direct occlusion or modulates ray-traced AO parameters.
+		</member>
+		<member name="noise_scale" type="float" setter="set_noise_scale" getter="get_noise_scale" default="1.0">
+			Spatial frequency of the 3D noise modulation.
+		</member>
+		<member name="noise_strength" type="float" setter="set_noise_strength" getter="get_noise_strength" default="0.0">
+			Strength of 3D noise modulation applied to the volume falloff.
+		</member>
+		<member name="noise_velocity" type="Vector3" setter="set_noise_velocity" getter="get_noise_velocity" default="Vector3( 0, 0, 0 )">
+			Scroll velocity applied to 3D noise over time.
+		</member>
+		<member name="occlusion" type="float" setter="set_occlusion" getter="get_occlusion" default="0.5">
+			Occlusion amount applied inside the volume in [constant MODE_DIRECT].
+		</member>
+		<member name="priority" type="int" setter="set_priority" getter="get_priority" default="0">
+			Evaluation order priority (lower values are evaluated first).
+		</member>
+		<member name="radius_multiplier" type="float" setter="set_radius_multiplier" getter="get_radius_multiplier" default="1.0">
+			Multiplier applied to [member RTAO.ray_radius] inside this volume when [member mode] is [constant MODE_MODULATE_TRACE].
+		</member>
+		<member name="shape" type="int" setter="set_shape" getter="get_shape" enum="LocalRTAO.Shape" default="0">
+			Geometric primitive shape of the volume.
+		</member>
+	</members>
+	<constants>
+		<constant name="SHAPE_BOX" value="0" enum="Shape">
+		</constant>
+		<constant name="SHAPE_SPHERE" value="1" enum="Shape">
+		</constant>
+		<constant name="SHAPE_ELLIPSOID" value="2" enum="Shape">
+		</constant>
+		<constant name="SHAPE_CYLINDER" value="3" enum="Shape">
+		</constant>
+		<constant name="SHAPE_CONE" value="4" enum="Shape">
+		</constant>
+		<constant name="MODE_DIRECT" value="0" enum="Mode">
+		</constant>
+		<constant name="MODE_MODULATE_TRACE" value="1" enum="Mode">
+		</constant>
+		<constant name="BLEND_MULTIPLY" value="0" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_MIN" value="1" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_MAX" value="2" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_OVERRIDE" value="3" enum="BlendMode">
+		</constant>
+	</constants>
+</class>

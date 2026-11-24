@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="RTReflections" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Real-time GPU BVH ray-traced reflections node using OpenGL 4.3 compute shaders.
+	</brief_description>
+	<description>
+		Computes physically-based ray-traced specular reflections against scene meshes, dynamic skinned meshes, PBR textures, lights, sky radiance, and transparent/alpha-cutout materials via a two-level GPU BVH (TLAS/BLAS).
+		Automatically attaches a reflection composite pass to eligible [SpatialMaterial]s in the scene, or exposes the traced reflection texture via [method get_reflection_texture] for custom shaders.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="apply_quality_preset">
+			<return type="void" />
+			<argument index="0" name="preset" type="int" enum="RTReflections.QualityPreset" />
+			<description>
+				Applies a scalability preset ([constant PRESET_LOW], [constant PRESET_MEDIUM], [constant PRESET_HIGH], or [constant PRESET_ULTRA]) across resolution, tracing, denoising, shadows, and mesh simplification settings.
+			</description>
+		</method>
+		<method name="get_reflection_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the generated mipmapped RGBA16F reflection [Texture]. RGB holds linear HDR reflected radiance and A holds camera-to-surface distance (negative when invalid/sky).
+			</description>
+		</method>
+		<method name="mark_geometry_dirty">
+			<return type="void" />
+			<description>
+				Forces the acceleration structures to rebuild on the next snapshot update.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="alpha_consideration" type="bool" setter="set_alpha_consideration" getter="get_alpha_consideration" default="true">
+			Enables full material alpha awareness in both the reflection G-buffer and ray traversal, handling alpha-scissor cutouts and semi-transparent surfaces.
+		</member>
+		<member name="alpha_max_steps" type="int" setter="set_alpha_max_steps" getter="get_alpha_max_steps" default="6">
+			Maximum number of alpha-tested or semi-transparent surfaces a single reflection ray can penetrate per bounce before terminating. Higher values handle stacked foliage/glass at extra traversal cost.
+		</member>
+		<member name="alpha_ray_transparency" type="bool" setter="set_alpha_ray_transparency" getter="get_alpha_ray_transparency" default="true">
+			If [code]true[/code], reflection rays pass through alpha-scissor holes and partially transmit through semi-transparent surfaces such as glass or water.
+		</member>
+		<member name="alpha_shadow_transmission" type="bool" setter="set_alpha_shadow_transmission" getter="get_alpha_shadow_transmission" default="true">
+			If [code]true[/code], shadow rays inside reflections respect alpha-scissor cutouts and attenuate through semi-transparent casters instead of casting solid black shadows.
+		</member>
+		<member name="ambient_bounce_approximation" type="float" setter="set_ambient_bounce_approximation" getter="get_ambient_bounce_approximation" default="0.25">
+			Approximates secondary indirect bounce light inside reflections by wrapping directional light energy with sky irradiance. Set to [code]0.0[/code] to disable.
+		</member>
+		<member name="ambient_light_color" type="Color" setter="set_ambient_light_color" getter="get_ambient_light_color" default="Color( 0.1, 0.1, 0.12, 1 )">
+			Custom ambient fill color used inside reflections when [member ambient_light_mode] is set to [constant AMBIENT_MODE_CUSTOM].
+		</member>
+		<member name="ambient_light_energy" type="float" setter="set_ambient_light_energy" getter="get_ambient_light_energy" default="1.0">
+			Multiplier for ambient light inside reflections when [member ambient_light_mode] is set to [constant AMBIENT_MODE_CUSTOM].
+		</member>
+		<member name="ambient_light_mode" type="int" setter="set_ambient_light_mode" getter="get_ambient_light_mode" enum="RTReflections.AmbientLightMode" default="0">
+			Controls how ambient lighting is resolved for hit surfaces inside reflections: inherited from the active [Environment], overridden with custom values, or disabled.
+		</member>
+		<member name="ambient_light_sky_contribution" type="float" setter="set_ambient_light_sky_contribution" getter="get_ambient_light_sky_contribution" default="1.0">
+			Blends between flat [member ambient_light_color] ([code]0.0[/code]) and sky spherical harmonics irradiance ([code]1.0[/code]) when [member ambient_light_mode] is [constant AMBIENT_MODE_CUSTOM].
+		</member>
+		<member name="ambient_occlusion_intensity" type="float" setter="set_ambient_occlusion_intensity" getter="get_ambient_occlusion_intensity" default="0.75">
+			Darkening strength of ray-traced ambient occlusion applied to ambient and indirect light on primary reflection hits.
+		</member>
+		<member name="ambient_occlusion_radius" type="float" setter="set_ambient_occlusion_radius" getter="get_ambient_occlusion_radius" default="1.5">
+			Maximum ray distance (in meters) for ray-traced ambient occlusion hemisphere samples inside reflections.
+		</member>
+		<member name="ambient_occlusion_samples" type="int" setter="set_ambient_occlusion_samples" getter="get_ambient_occlusion_samples" default="0">
+			Number of cosine-weighted hemisphere ambient occlusion rays traced per primary reflection hit. Set to [code]0[/code] to disable ray-traced ambient occlusion for maximum speed.
+		</member>
+		<member name="ambient_radiance_boost" type="float" setter="set_ambient_radiance_boost" getter="get_ambient_radiance_boost" default="1.0">
+			Scales the L2 spherical harmonics sky irradiance used to illuminate diffuse surfaces inside reflections.
+		</member>
+		<member name="auto_attach_materials" type="bool" setter="set_auto_attach_materials" getter="get_auto_attach_materials" default="true">
+			Automatically injects a compositing [code]next_pass[/code] shader onto eligible transparent/alpha [SpatialMaterial]s that do not already define a custom [member Material.next_pass]. Opaque and alpha-scissor surfaces are composited onto the screen automatically when [member auto_composite] is enabled.
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			Automatically composites ray-traced reflections onto opaque surfaces on the active viewport before volumetric fog and 2D UI. Disable if manually sampling [method get_reflection_texture].
+		</member>
+		<member name="bilateral_upsample" type="bool" setter="set_bilateral_upsample" getter="get_bilateral_upsample" default="true">
+			Uses depth-aware bilateral filtering when upsampling lower-resolution reflections onto full-resolution geometry edges, preventing haloing around foreground silhouettes.
+		</member>
+		<member name="blas_builds_per_frame" type="int" setter="set_blas_builds_per_frame" getter="get_blas_builds_per_frame" default="0">
+			Maximum number of new or invalidated mesh BLAS structures built per frame. Set to [code]0[/code] for unlimited builds, or a small number (e.g. [code]4[/code]-[code]8[/code]) to eliminate hitches when streaming large scenes.
+		</member>
+		<member name="blur_lod_scale" type="float" setter="set_blur_lod_scale" getter="get_blur_lod_scale" default="5.0">
+			Maximum mipmap level reached as material roughness approaches [code]1.0[/code].
+		</member>
+		<member name="blur_strength" type="float" setter="set_blur_strength" getter="get_blur_strength" default="1.0">
+			Controls how strongly rough surfaces blur sampled reflections using mipmaps.
+		</member>
+		<member name="bounce_distance_falloff" type="float" setter="set_bounce_distance_falloff" getter="get_bounce_distance_falloff" default="0.5">
+			Multiplies [member max_ray_distance] after each reflection bounce to keep secondary bounce traversal fast.
+		</member>
+		<member name="bounce_local_lights" type="bool" setter="set_bounce_local_lights" getter="get_bounce_local_lights" default="true">
+			If [code]true[/code], secondary and deeper reflection bounces also evaluate [OmniLight] and [SpotLight] illumination rather than only [DirectionalLight] and ambient sky.
+		</member>
+		<member name="bounce_throughput_threshold" type="float" setter="set_bounce_throughput_threshold" getter="get_bounce_throughput_threshold" default="0.02">
+			Early-terminates multi-bounce ray paths once Fresnel throughput drops below this threshold.
+		</member>
+		<member name="checkerboard_tracing" type="bool" setter="set_checkerboard_tracing" getter="get_checkerboard_tracing" default="false">
+			Traces only half of the reflection pixels per frame in an alternating checkerboard pattern and reconstructs missing pixels from depth/normal-similar neighbors. Nearly doubles tracing performance.
+		</member>
+		<member name="custom_sky" type="Sky" setter="set_custom_sky" getter="get_custom_sky">
+			Custom [ProceduralSky] or [PanoramaSky] resource used exclusively for reflections and reflection ambient radiance when [member custom_sky_mode] is [constant SKY_MODE_CUSTOM_SKY].
+		</member>
+		<member name="custom_sky_color" type="Color" setter="set_custom_sky_color" getter="get_custom_sky_color" default="Color( 0.2, 0.25, 0.3, 1 )">
+			Solid reflection sky color used when [member custom_sky_mode] is set to [constant SKY_MODE_COLOR].
+		</member>
+		<member name="custom_sky_energy" type="float" setter="set_custom_sky_energy" getter="get_custom_sky_energy" default="1.0">
+			Brightness multiplier for [member custom_sky] or [member custom_sky_color].
+		</member>
+		<member name="custom_sky_mode" type="int" setter="set_custom_sky_mode" getter="get_custom_sky_mode" enum="RTReflections.CustomSkyMode" default="0">
+			Selects whether reflection rays and sky irradiance use the scene's active [Environment] sky, a dedicated [member custom_sky], or a flat [member custom_sky_color].
+		</member>
+		<member name="custom_sky_rotation" type="Vector3" setter="set_custom_sky_rotation" getter="get_custom_sky_rotation" default="Vector3( 0, 0, 0 )">
+			Euler rotation in degrees applied to the custom reflection sky orientation.
+		</member>
+		<member name="distance_lod_strength" type="float" setter="set_distance_lod_strength" getter="get_distance_lod_strength" default="1.0">
+			Increases sampled texture mipmap LOD as total ray path distance grows, improving texture cache coherence and reducing distant aliasing.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables real-time reflection rendering inside the 3D editor viewport.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Master toggle for ray-traced reflection capture, compute dispatch, and material compositing.
+		</member>
+		<member name="final_bounce_env_fallback" type="bool" setter="set_final_bounce_env_fallback" getter="get_final_bounce_env_fallback" default="true">
+			Blends sky environment reflection into glossy surfaces hit on the final bounce instead of stopping at diffuse shading alone.
+		</member>
+		<member name="frustum_cull_gbuffer" type="bool" setter="set_frustum_cull_gbuffer" getter="get_frustum_cull_gbuffer" default="true">
+			Skips submitting off-screen meshes to the primary reflection G-buffer rasterization pass while keeping them active in the ray-traced TLAS so off-screen objects still appear in reflections.
+		</member>
+		<member name="glossy_roughness_spread" type="float" setter="set_glossy_roughness_spread" getter="get_glossy_roughness_spread" default="0.25">
+			Controls stochastic GGX reflection cone widening for rough surfaces when [member ray_samples_per_pixel] &gt; 1, [member temporal_accumulation], or [member spatial_denoise_passes] &gt; 0 is active. Set to [code]0.0[/code] for purely mirror-like ray directions.
+		</member>
+		<member name="light_cull_distance" type="float" setter="set_light_cull_distance" getter="get_light_cull_distance" default="120.0">
+			Maximum distance from the camera (outside light range) beyond which local [OmniLight] and [SpotLight] nodes are excluded from reflection shading.
+		</member>
+		<member name="max_bounces" type="int" setter="set_max_bounces" getter="get_max_bounces" default="1">
+			Maximum number of specular reflection bounces traced per ray.
+		</member>
+		<member name="max_ray_distance" type="float" setter="set_max_ray_distance" getter="get_max_ray_distance" default="200.0">
+			Maximum world-space distance (in meters) a primary reflection ray travels before falling back to the sky.
+		</member>
+		<member name="max_roughness" type="float" setter="set_max_roughness" getter="get_max_roughness" default="0.65">
+			Dielectric surfaces rougher than this value stop tracing reflection rays and fade out smoothly over [member roughness_fade_range]. Metallic surfaces ignore this cutoff.
+		</member>
+		<member name="max_texture_layers" type="int" setter="set_max_texture_layers" getter="get_max_texture_layers" default="64">
+			Maximum unique textures packed into the GPU texture array for hit shading. Increasing this uses more VRAM.
+		</member>
+		<member name="max_tlas_instances" type="int" setter="set_max_tlas_instances" getter="get_max_tlas_instances" default="0">
+			Caps the maximum number of nearest mesh instances inserted into the ray-traced TLAS per frame. Set to [code]0[/code] for unlimited instances.
+		</member>
+		<member name="mesh_cull_distance" type="float" setter="set_mesh_cull_distance" getter="get_mesh_cull_distance" default="45.0">
+			Distance beyond which small objects with angular size below [member mesh_cull_min_angle] are omitted from reflections.
+		</member>
+		<member name="mesh_cull_min_angle" type="float" setter="set_mesh_cull_min_angle" getter="get_mesh_cull_min_angle" default="0.012">
+			Minimum bounding-sphere angular radius (in radians) required for objects farther than [member mesh_cull_distance] to remain in reflections. Set to [code]0.0[/code] to disable small-object culling.
+		</member>
+		<member name="mesh_simplification_enabled" type="bool" setter="set_mesh_simplification_enabled" getter="is_mesh_simplification_enabled" default="false">
+			Simplifies high-polygon meshes when building ray-tracing BLAS acceleration structures to dramatically improve BVH build times, VRAM usage, and traversal speed.
+		</member>
+		<member name="mesh_simplification_gbuffer" type="bool" setter="set_mesh_simplification_gbuffer" getter="get_mesh_simplification_gbuffer" default="false">
+			If [code]true[/code], the primary reflection G-buffer pass also renders the simplified proxy geometry instead of the original mesh. Leave [code]false[/code] to keep razor-sharp surface normals on primary receivers while tracing simplified BLAS proxies.
+		</member>
+		<member name="mesh_simplification_max_error" type="float" setter="set_mesh_simplification_max_error" getter="get_mesh_simplification_max_error" default="0.05">
+			Maximum normalized geometric QEM error (as a fraction of mesh bounding diagonal) permitted during edge collapse. Set to [code]0.0[/code] to always simplify down to [member mesh_simplification_ratio].
+		</member>
+		<member name="mesh_simplification_min_triangles" type="int" setter="set_mesh_simplification_min_triangles" getter="get_mesh_simplification_min_triangles" default="128">
+			Meshes with triangle counts at or below this threshold are never simplified.
+		</member>
+		<member name="mesh_simplification_mode" type="int" setter="set_mesh_simplification_mode" getter="get_mesh_simplification_mode" enum="RTReflections.SimplificationMode" default="0">
+			Algorithm used to simplify meshes: [constant SIMPLIFY_QEM] preserves silhouette and UV boundaries at high quality; [constant SIMPLIFY_VERTEX_CLUSTERING] simplifies ultra-fast via spatial grid quantization.
+		</member>
+		<member name="mesh_simplification_preserve_seams" type="bool" setter="set_mesh_simplification_preserve_seams" getter="get_mesh_simplification_preserve_seams" default="true">
+			Applies boundary plane penalties and UV/material/normal seam preservation during simplification to prevent holes or stretched textures.
+		</member>
+		<member name="mesh_simplification_ratio" type="float" setter="set_mesh_simplification_ratio" getter="get_mesh_simplification_ratio" default="0.5">
+			Target triangle retention fraction (e.g. [code]0.5[/code] reduces triangles by 50%).
+		</member>
+		<member name="mesh_simplification_skinned" type="bool" setter="set_mesh_simplification_skinned" getter="get_mesh_simplification_skinned" default="false">
+			Allows simplifying skeletal skinned meshes as well as static meshes.
+		</member>
+		<member name="normal_maps_in_bounces" type="bool" setter="set_normal_maps_in_bounces" getter="get_normal_maps_in_bounces" default="true">
+			Evaluates surface normal maps on ray-traced bounce hits using triangle-space TBN derivation. Disable for faster bounce shading.
+		</member>
+		<member name="pbr_texture_bounces" type="int" setter="set_pbr_texture_bounces" getter="get_pbr_texture_bounces" default="1">
+			Maximum bounce depth at which hit surfaces sample roughness, metallic, normal, and ambient occlusion textures.
+		</member>
+		<member name="ray_origin_bias" type="float" setter="set_ray_origin_bias" getter="get_ray_origin_bias" default="0.004">
+			Surface normal offset applied to ray origins to eliminate self-intersection acne.
+		</member>
+		<member name="ray_samples_per_pixel" type="int" setter="set_ray_samples_per_pixel" getter="get_ray_samples_per_pixel" default="1">
+			Number of reflection rays traced per pixel on rough/glossy surfaces. Mirror-smooth surfaces always trace 1 ray.
+		</member>
+		<member name="reflection_cull_mask" type="int" setter="set_reflection_cull_mask" getter="get_reflection_cull_mask" default="4294967295">
+			Visual layer mask controlling which [MeshInstance] nodes appear inside reflections.
+		</member>
+		<member name="reflection_filtering" type="int" setter="set_reflection_filtering" getter="get_reflection_filtering" enum="RTReflections.ReflectionFiltering" default="1">
+			Mipmap sampling filter used for rough reflections in the composite pass ([constant FILTER_BILINEAR] or [constant FILTER_BICUBIC]).
+		</member>
+		<member name="reflection_intensity" type="float" setter="set_reflection_intensity" getter="get_reflection_intensity" default="1.0">
+			Overall intensity multiplier applied to composited reflections.
+		</member>
+		<member name="reflection_scale" type="float" setter="set_reflection_scale" getter="get_reflection_scale" default="0.5">
+			Resolution scale of the reflection trace buffer relative to the active viewport size.
+		</member>
+		<member name="reflection_viewing_cull_mask" type="int" setter="set_reflection_viewing_cull_mask" getter="get_reflection_viewing_cull_mask" default="4294967295">
+			Visual layer mask controlling which [MeshInstance] nodes receive ray-traced reflections.
+		</member>
+		<member name="respect_material_cull_mode" type="bool" setter="set_respect_material_cull_mode" getter="get_respect_material_cull_mode" default="true">
+			Honors each [SpatialMaterial]'s [member SpatialMaterial.params_cull_mode] (Back, Front, Disabled) during G-buffer rendering, ray intersection, and composite next-pass shaders.
+		</member>
+		<member name="roughness_fade_range" type="float" setter="set_roughness_fade_range" getter="get_roughness_fade_range" default="0.15">
+			Smoothly fades reflection alpha between [code]max_roughness - roughness_fade_range[/code] and [member max_roughness] on dielectric surfaces.
+		</member>
+		<member name="shadow_bounces" type="int" setter="set_shadow_bounces" getter="get_shadow_bounces" default="1">
+			Maximum reflection bounce depth at which direct light shadow rays are traced.
+		</member>
+		<member name="shadow_max_distance" type="float" setter="set_shadow_max_distance" getter="get_shadow_max_distance" default="80.0">
+			Maximum ray path distance from the camera within which reflected surfaces trace shadow rays.
+		</member>
+		<member name="shadow_ray_bias" type="float" setter="set_shadow_ray_bias" getter="get_shadow_ray_bias" default="0.004">
+			Surface normal offset applied to shadow and AO ray origins to avoid self-shadowing acne.
+		</member>
+		<member name="skinned_meshes_in_reflections" type="bool" setter="set_skinned_meshes_in_reflections" getter="get_skinned_meshes_in_reflections" default="true">
+			Enables real-time CPU skinning and fast bottom-up BVH refitting so animated characters appear in reflections.
+		</member>
+		<member name="sky_reflection_energy" type="float" setter="set_sky_reflection_energy" getter="get_sky_reflection_energy" default="1.0">
+			Independent brightness multiplier for direct sky reflections without altering diffuse ambient sky irradiance.
+		</member>
+		<member name="spatial_denoise_passes" type="int" setter="set_spatial_denoise_passes" getter="get_spatial_denoise_passes" default="0">
+			Number of edge-aware A-Trous bilateral spatial denoising passes executed on rough reflections while keeping mirror reflections sharp.
+		</member>
+		<member name="temporal_accumulation" type="bool" setter="set_temporal_accumulation" getter="get_temporal_accumulation" default="false">
+			Reprojects previous-frame reflection data using world-space position and neighborhood color clamping to converge glossy/AO/checkerboard noise over time.
+		</member>
+		<member name="temporal_blend" type="float" setter="set_temporal_blend" getter="get_temporal_blend" default="0.2">
+			Weight of the current frame when [member temporal_accumulation] is enabled. Lower values produce smoother convergence at the cost of slight inertia.
+		</member>
+		<member name="texture_array_resolution" type="int" setter="set_texture_array_resolution" getter="get_texture_array_resolution" enum="RTReflections.TextureResolution" default="512">
+			Square resolution of each slice in the GPU texture array used to shade reflected hits. Lowering this saves significant VRAM.
+		</member>
+		<member name="texture_lod_bias" type="float" setter="set_texture_lod_bias" getter="get_texture_lod_bias" default="0.0">
+			Global mipmap LOD bias added when sampling textures on reflected hits.
+		</member>
+		<member name="trace_shadows" type="bool" setter="set_trace_shadows" getter="get_trace_shadows" default="true">
+			Enables ray-traced direct light shadows on surfaces seen inside reflections.
+		</member>
+		<member name="transparent_fresnel_boost" type="float" setter="set_transparent_fresnel_boost" getter="get_transparent_fresnel_boost" default="0.75">
+			Increases reflection visibility on low-alpha transparent surfaces (such as glass or water) at grazing Fresnel angles.
+		</member>
+		<member name="transparent_receiver_min_alpha" type="float" setter="set_transparent_receiver_min_alpha" getter="get_transparent_receiver_min_alpha" default="0.02">
+			Minimum alpha required for a transparent material to write into the reflection G-buffer pass when [member transparent_receivers] is enabled.
+		</member>
+		<member name="transparent_receivers" type="bool" setter="set_transparent_receivers" getter="get_transparent_receivers" default="true">
+			Allows semi-transparent surfaces (such as glass windows and water planes) to receive and display ray-traced reflections.
+		</member>
+		<member name="update_interval" type="int" setter="set_update_interval" getter="get_update_interval" default="1">
+			Executes reflection tracing once every N frames. Increasing this to [code]2[/code] or [code]3[/code] scales GPU cost proportionally on lower-end hardware.
+		</member>
+	</members>
+	<constants>
+		<constant name="FILTER_BILINEAR" value="0" enum="ReflectionFiltering">
+			Fast hardware bilinear mipmap filtering for rough reflection blurring.
+		</constant>
+		<constant name="FILTER_BICUBIC" value="1" enum="ReflectionFiltering">
+			Smooth 16-tap B-spline bicubic mipmap filtering for rough reflection blurring.
+		</constant>
+		<constant name="PRESET_LOW" value="0" enum="QualityPreset">
+			Quarter-resolution checkerboard tracing with vertex-clustering mesh simplification, no shadows, and 256px textures.
+		</constant>
+		<constant name="PRESET_MEDIUM" value="1" enum="QualityPreset">
+			Half-resolution tracing with QEM mesh simplification, 1-bounce shadows, and 1-sample ray-traced AO.
+		</constant>
+		<constant name="PRESET_HIGH" value="2" enum="QualityPreset">
+			Three-quarter-resolution multi-bounce tracing with temporal accumulation, spatial denoising, and 2-sample ray-traced AO.
+		</constant>
+		<constant name="PRESET_ULTRA" value="3" enum="QualityPreset">
+			Full-resolution 2-spp multi-bounce tracing with 2 spatial denoise passes, 3-sample AO, and 1024px textures.
+		</constant>
+		<constant name="SKY_MODE_ENVIRONMENT" value="0" enum="CustomSkyMode">
+			Uses the active viewport [Environment] sky or background color.
+		</constant>
+		<constant name="SKY_MODE_CUSTOM_SKY" value="1" enum="CustomSkyMode">
+			Overrides the reflection sky and irradiance with [member custom_sky].
+		</constant>
+		<constant name="SKY_MODE_COLOR" value="2" enum="CustomSkyMode">
+			Overrides the reflection sky and irradiance with a uniform [member custom_sky_color].
+		</constant>
+		<constant name="AMBIENT_MODE_ENVIRONMENT" value="0" enum="AmbientLightMode">
+			Inherits ambient color, energy, and sky contribution from the active [Environment].
+		</constant>
+		<constant name="AMBIENT_MODE_CUSTOM" value="1" enum="AmbientLightMode">
+			Uses custom [member ambient_light_color], [member ambient_light_energy], and [member ambient_light_sky_contribution] inside reflections.
+		</constant>
+		<constant name="AMBIENT_MODE_DISABLED" value="2" enum="AmbientLightMode">
+			Disables ambient fill inside reflections so only direct lighting, bounce fill, and emissives contribute.
+		</constant>
+		<constant name="SIMPLIFY_QEM" value="0" enum="SimplificationMode">
+			Quadric Error Metric edge collapse preserving silhouettes, UV seams, and material boundaries.
+		</constant>
+		<constant name="SIMPLIFY_VERTEX_CLUSTERING" value="1" enum="SimplificationMode">
+			Fast uniform 3D spatial grid clustering for rapid BLAS generation on dense meshes.
+		</constant>
+		<constant name="TEX_RES_128" value="128" enum="TextureResolution">
+			128x128 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_256" value="256" enum="TextureResolution">
+			256x256 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_512" value="512" enum="TextureResolution">
+			512x512 resolution per texture array slice.
+		</constant>
+		<constant name="TEX_RES_1024" value="1024" enum="TextureResolution">
+			1024x1024 resolution per texture array slice.
+		</constant>
+	</constants>
+</class>

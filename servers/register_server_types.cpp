@@ -57,6 +57,7 @@
 #include "audio_server.h"
 #include "camera/camera_feed.h"
 #include "camera_server.h"
+#include "gl43/gl43_server.h"
 #include "navigation_2d_server.h"
 #include "navigation_server.h"
 #include "physics/physics_server_sw.h"
@@ -118,8 +119,10 @@ void register_server_types() {
 	ClassDB::register_virtual_class<Navigation2DServer>();
 	ClassDB::register_class<ARVRServer>();
 	ClassDB::register_class<CameraServer>();
+	ClassDB::register_virtual_class<GL43Server>();
 
 	shader_types = memnew(ShaderTypes);
+	memnew(GL43Server);
 
 	ClassDB::register_virtual_class<ARVRInterface>();
 	ClassDB::register_class<ARVRPositionalTracker>();
@@ -205,6 +208,9 @@ void register_server_types() {
 }
 
 void unregister_server_types() {
+	if (GL43Server::get_singleton()) {
+		memdelete(GL43Server::get_singleton());
+	}
 	memdelete(shader_types);
 }
 
@@ -217,4 +223,5 @@ void register_server_singletons() {
 	Engine::get_singleton()->add_singleton(Engine::Singleton("Navigation2DServer", Navigation2DServer::get_singleton_mut()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("ARVRServer", ARVRServer::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("CameraServer", CameraServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("GL43Server", GL43Server::get_singleton()));
 }

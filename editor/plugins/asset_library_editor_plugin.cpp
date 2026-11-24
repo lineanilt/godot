@@ -1512,7 +1512,7 @@ EditorAssetLibrary::EditorAssetLibrary(bool p_templates_only) {
 
 	library_scroll = memnew(ScrollContainer);
 	library_scroll->set_enable_v_scroll(true);
-	library_scroll->set_enable_h_scroll(false);
+	library_scroll->set_enable_h_scroll(true);
 
 	library_scroll_bg->add_child(library_scroll);
 

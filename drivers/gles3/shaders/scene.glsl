@@ -144,7 +144,7 @@ layout(std140) uniform DirectionalLightData { //ubo:3
 	mediump vec4 light_clamp;
 	mediump vec4 shadow_color_contact;
 	highp mat4 shadow_matrix1;
-	highp mat4 shadow_matrix2;  
+	highp mat4 shadow_matrix2;
 	highp mat4 shadow_matrix3;
 	highp mat4 shadow_matrix4;
 	mediump vec4 shadow_split_offsets;
@@ -275,13 +275,8 @@ float get_omni_attenuation(float distance, float inv_range, float decay) {
 void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, float roughness, inout vec3 diffuse, inout vec3 specular) {
 	vec3 light_rel_vec = omni_lights[idx].light_pos_inv_radius.xyz - vertex;
 	vec3 local_light_rel_vec = -(omni_lights[idx].light_inverse_matrix * vec4(vertex, 1.0)).xyz;
-	
-	float m_len = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
-	vec3 norm_l = m_len > 0.0 ? abs(local_light_rel_vec) / m_len : vec3(0.0);
-	vec3 l2 = norm_l * norm_l;
-	vec3 l4 = l2 * l2;
-	float sq_length = m_len * sqrt(sqrt(sqrt(l4.x * l4.x + l4.y * l4.y + l4.z * l4.z)));
-	
+
+	float sq_length = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
 	float light_length = mix(length(local_light_rel_vec), sq_length, omni_lights[idx].shadow_extra_params.y);
 
 #ifdef USE_PHYSICAL_LIGHT_ATTENUATION
@@ -299,14 +294,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, float r
 	vec3 light_rel_vec = spot_lights[idx].light_pos_inv_radius.xyz - vertex;
 	vec3 local_light_rel_vec = -(spot_lights[idx].light_inverse_matrix * vec4(vertex, 1.0)).xyz;
 
-	// Distance attenuation (L8 superellipsoid)
-	float m_len = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
-	vec3 norm_l = m_len > 0.0 ? abs(local_light_rel_vec) / m_len : vec3(0.0);
-	vec3 l2 = norm_l * norm_l;
-	vec3 l4 = l2 * l2;
-	float sq_length = m_len * sqrt(sqrt(sqrt(l4.x * l4.x + l4.y * l4.y + l4.z * l4.z)));
-
-	float light_length = mix(length(local_light_rel_vec), sq_length, spot_lights[idx].shadow_extra_params.y);
+	float light_length = length(local_light_rel_vec);
 
 #ifdef USE_PHYSICAL_LIGHT_ATTENUATION
 	vec3 light_attenuation = vec3(get_omni_attenuation(light_length, spot_lights[idx].light_pos_inv_radius.w, spot_lights[idx].light_direction_attenuation.w));
@@ -315,22 +303,28 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, float r
 	vec3 light_attenuation = vec3(pow(max(1.0 - normalized_distance, 0.001), spot_lights[idx].light_direction_attenuation.w));
 #endif
 
-	// Spot cone / angular attenuation (L8 superellipse)
+	// Spot cone / angular attenuation
 	vec3 spot_dir = vec3(0.0, 0.0, -1.0);
 	float spot_cutoff = spot_lights[idx].light_params.y;
 	vec3 L = -local_light_rel_vec;
-	
-	float m_dir = max(abs(L.x), abs(L.y));
-	vec2 norm_L = m_dir > 0.0 ? abs(L.xy) / m_dir : vec2(0.0);
-	vec2 lxy2 = norm_L * norm_L;
-	vec2 lxy4 = lxy2 * lxy2;
-	float sq_dir = m_dir * sqrt(sqrt(sqrt(lxy4.x * lxy4.x + lxy4.y * lxy4.y)));
-	
-	vec3 L_dir = mix(L, vec3(sq_dir, 0.0, L.z), spot_lights[idx].shadow_extra_params.y);
-	
-	float scos = max(dot(normalize(L_dir), spot_dir), spot_cutoff);
-	float spot_rim = (1.0 - scos) / (1.0 - spot_cutoff);
-	light_attenuation *= 1.0 - pow(max(spot_rim, 0.001), spot_lights[idx].light_params.x);
+
+	// Circular spot rim
+	float scos_circ = max(dot(normalize(L), spot_dir), spot_cutoff);
+	float spot_rim_circ = max(0.0001, (1.0 - scos_circ) / (1.0 - spot_cutoff));
+
+	// Square spot rim
+	float spot_rim_sq = 1.0;
+	if (L.z < -0.0001) {
+		float tan_angle = sqrt(max(0.0, 1.0 - spot_cutoff * spot_cutoff)) / max(0.001, spot_cutoff);
+		vec2 uv = L.xy / (-L.z * tan_angle);
+		if (max(abs(uv.x), abs(uv.y)) <= 1.0) {
+			vec2 uv2 = uv * uv;
+			spot_rim_sq = max(0.0001, uv2.x + uv2.y - uv2.x * uv2.y);
+		}
+	}
+
+	float spot_rim = mix(spot_rim_circ, spot_rim_sq, spot_lights[idx].shadow_extra_params.y);
+	light_attenuation *= 1.0 - pow(spot_rim, spot_lights[idx].light_params.x);
 
 	light_compute(normal, normalize(light_rel_vec), eye_vec, spot_lights[idx].light_color_energy.rgb * light_attenuation, roughness, diffuse, specular);
 }
@@ -918,15 +912,9 @@ layout(std140) uniform DirectionalLightData {
 	highp mat4 dir_projector_matrix;
 };
 
-uniform highp sampler2DShadow directional_shadow; // texunit:-5
-
-#else //ubershader-skip
-
-// Declared so custom light() shaders referencing DIRECTIONAL_SHADOWMAP compile in non-directional passes
-uniform highp sampler2DShadow directional_shadow;
-
 #endif //ubershader-skip
 
+uniform highp sampler2DShadow directional_shadow; // texunit:-5
 
 float texture_shadow(highp sampler2DShadow p_shadow, vec4 p_coord) {
 	return textureProj(p_shadow, p_coord);
@@ -939,6 +927,22 @@ float texture_shadow(sampler2D p_sampler, vec4 p_coord) {
 }
 float texture_shadow(sampler2D p_sampler, vec3 p_coord) {
 	return textureProj(p_sampler, p_coord).r;
+}
+
+vec4 textureGather_shadow(highp sampler2DShadow p_shadow, vec4 p_coord) {
+    return textureGather(p_shadow, p_coord.xy / p_coord.w, p_coord.z / p_coord.w);
+}
+
+vec4 textureGather_shadow(highp sampler2DShadow p_shadow, vec3 p_coord) {
+    return textureGather(p_shadow, p_coord.xy, p_coord.z);
+}
+
+vec4 textureGather_shadow(sampler2D p_sampler, vec4 p_coord) {
+    return textureGather(p_sampler, p_coord.xy / p_coord.w, 0);
+}
+
+vec4 textureGather_shadow(sampler2D p_sampler, vec3 p_coord) {
+    return textureGather(p_sampler, p_coord.xy / p_coord.z, 0);
 }
 
 #ifdef USE_VERTEX_LIGHTING //ubershader-skip
@@ -971,333 +975,6 @@ vec2 transform_projector_uv(vec2 uv, vec2 scale, vec2 offset, float rotation) {
 	p = mat2(c, -s, s, c) * p;
 	p = p * scale + offset;
 	return p + 0.5;
-}
-
-#define GOBO_PI     3.14159265359
-#define GOBO_TWO_PI 6.28318530718
-
-// --- Lightweight Procedural Helpers ---
-float _gobo_hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
-vec2 _gobo_hash2(vec2 p) {
-	return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453123);
-}
-
-float _gobo_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	return mix(mix(_gobo_hash(i + vec2(0.0, 0.0)), _gobo_hash(i + vec2(1.0, 0.0)), u.x),
-	           mix(_gobo_hash(i + vec2(0.0, 1.0)), _gobo_hash(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-
-// 2-Octave lightweight FBM (Massively speeds up compilation)
-float _gobo_fbm(vec2 p) {
-	return _gobo_noise(p) * 0.65 + _gobo_noise(p * 2.05 + 1.2) * 0.35;
-}
-
-float _gobo_voronoi(vec2 p) {
-	vec2 n = floor(p);
-	vec2 f = fract(p);
-	float m = 8.0;
-	for (int j = -1; j <= 1; j++) {
-		for (int i = -1; i <= 1; i++) {
-			vec2 g = vec2(float(i), float(j));
-			vec2 o = _gobo_hash2(n + g);
-			vec2 r = g - f + o;
-			m = min(m, dot(r, r));
-		}
-	}
-	return sqrt(m);
-}
-
-float _gobo_sdBox(vec2 p, vec2 b) {
-	vec2 d = abs(p) - b;
-	return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
-}
-
-float apply_proj_sharpness(float raw_mask, float sharpness) {
-	float s = clamp(sharpness, 0.0, 1.0);
-	float w = max(0.001, (1.0 - s) * 0.5);
-	return smoothstep(0.5 - w, 0.5 + w, raw_mask);
-}
-
-// ============================================================================
-// 20 CURATED SPOTLIGHT GOBOS
-// ============================================================================
-float eval_proj_spot(int preset, vec2 uv, float sharpness) {
-	float r = length(uv);
-	float angle = atan(uv.y, uv.x);
-	float raw_mask = 1.0;
-
-	switch (preset) {
-		case 1: { // Venetian Blinds
-			float box = _gobo_sdBox(uv, vec2(0.38, 0.42));
-			float slat = smoothstep(0.15, 0.28, fract((uv.y + 0.5) * 22.0));
-			float cords = smoothstep(0.006, 0.015, abs(abs(uv.x) - 0.20));
-			raw_mask = smoothstep(0.01, -0.01, box) * slat * cords;
-			break;
-		}
-		case 2: { // Plantation Shutters
-			float box = _gobo_sdBox(uv, vec2(0.35, 0.42));
-			float slats = smoothstep(0.18, 0.32, fract((uv.y + 0.5) * 12.0));
-			float rod = smoothstep(0.012, 0.020, abs(uv.x));
-			raw_mask = smoothstep(0.01, -0.01, box) * slats * rod;
-			break;
-		}
-		case 3: { // 4-Pane Casement Window
-			float frame = smoothstep(0.01, -0.01, _gobo_sdBox(uv, vec2(0.36, 0.40)));
-			float mullion = smoothstep(0.015, 0.025, min(abs(uv.x), abs(uv.y)));
-			raw_mask = frame * mullion;
-			break;
-		}
-		case 4: { // Industrial Factory Steel Grid
-			float frame = smoothstep(0.01, -0.01, _gobo_sdBox(uv, vec2(0.40, 0.40)));
-			vec2 g = abs(fract(uv * 5.0) - 0.5);
-			float bars = smoothstep(0.035, 0.065, min(g.x, g.y));
-			raw_mask = frame * bars;
-			break;
-		}
-		case 5: { // Arched Church Window
-			float arch = (uv.y > 0.0) ? (length(uv) - 0.38) : _gobo_sdBox(uv - vec2(0.0, -0.2), vec2(0.38, 0.2));
-			float frame = smoothstep(0.01, -0.01, arch);
-			float mullion = smoothstep(0.012, 0.022, min(abs(uv.x), abs(uv.y)));
-			raw_mask = frame * mullion;
-			break;
-		}
-		case 6: { // Diagonal Garden Trellis
-			vec2 d_uv = vec2(uv.x + uv.y, uv.x - uv.y) * 8.0;
-			vec2 lat = abs(fract(d_uv) - 0.5);
-			raw_mask = smoothstep(0.06, 0.12, min(lat.x, lat.y)) * smoothstep(0.48, 0.42, r);
-			break;
-		}
-		case 7: { // Dappled Sunlight (Komorebi Leaves)
-			float v1 = _gobo_voronoi(uv * 12.0);
-			float n = _gobo_noise(uv * 8.0);
-			raw_mask = smoothstep(0.28, 0.65, (1.0 - v1 * 0.7) + n * 0.3) * smoothstep(0.48, 0.38, r);
-			break;
-		}
-		case 8: { // Tree Branches
-			float b1 = abs(_gobo_fbm(vec2(uv.x * 5.0, uv.y * 2.0)) - 0.5);
-			raw_mask = smoothstep(0.04, 0.14, b1) * smoothstep(0.48, 0.42, r);
-			break;
-		}
-		case 9: { // Tropical Palm Frond
-			vec2 p = uv;
-			float stem = smoothstep(0.008, 0.018, abs(p.x - p.y * p.y * 0.8));
-			float leaflets = smoothstep(0.18, 0.35, abs(sin((p.x * 2.0 + p.y) * 35.0)));
-			float shape = smoothstep(0.40, 0.05, length(p * vec2(1.8, 1.0)));
-			raw_mask = max(1.0 - shape, stem * leaflets);
-			break;
-		}
-		case 10: { // 4-Way Cinema Barndoors
-			float top = smoothstep(0.02, -0.02, uv.y - 0.22);
-			float bot = smoothstep(-0.02, 0.02, uv.y + 0.24);
-			float left = smoothstep(-0.02, 0.02, uv.x + 0.32);
-			float right = smoothstep(0.02, -0.02, uv.x - 0.30);
-			raw_mask = top * bot * left * right;
-			break;
-		}
-		case 11: { // Iris Aperture
-			float a = angle + GOBO_PI;
-			float seg = GOBO_TWO_PI / 12.0;
-			float poly = 0.32 / cos(mod(a, seg) - seg * 0.5);
-			raw_mask = smoothstep(poly + 0.015, poly - 0.015, r);
-			break;
-		}
-		case 12: { // Flashlight / Torch Beam
-			float hotspot = exp(-r * r * 45.0);
-			float spill = smoothstep(0.44, 0.40, r) * 0.35;
-			float ring = smoothstep(0.03, 0.12, abs(r - 0.24));
-			raw_mask = clamp(hotspot + spill * ring, 0.0, 1.0);
-			break;
-		}
-		case 13: { // Car Low-Beam Headlight Cutoff
-			float cutoff_y = (uv.x < 0.0) ? 0.0 : min(0.14, uv.x * 0.2679);
-			float beam = smoothstep(0.015, -0.015, uv.y - cutoff_y);
-			float spread = smoothstep(0.46, 0.20, abs(uv.x)) * smoothstep(-0.35, -0.08, uv.y);
-			raw_mask = beam * spread;
-			break;
-		}
-		case 14: { // Prison Cell Bars
-			float bars = smoothstep(0.018, 0.038, abs(fract((uv.x + 0.5) * 8.0) - 0.5));
-			float tie = smoothstep(0.014, 0.024, abs(uv.y));
-			raw_mask = bars * tie * smoothstep(0.48, 0.44, r);
-			break;
-		}
-		case 15: { // Chainlink Fence
-			vec2 f = abs(fract(uv * 12.0) - 0.5);
-			raw_mask = smoothstep(0.06, 0.14, abs(f.x + f.y - 0.5)) * smoothstep(0.48, 0.44, r);
-			break;
-		}
-		case 16: { // Ceiling Fan
-			float hub = smoothstep(0.08, 0.09, r);
-			float blade_ang = mod(angle + 0.3927, 1.5708) - 0.7854;
-			float blade = smoothstep(0.04, 0.07, abs(sin(blade_ang)) * r);
-			raw_mask = max(1.0 - smoothstep(0.42, 0.40, r), min(hub, blade));
-			break;
-		}
-		case 17: { // Swimming Pool Caustics
-			vec2 p = uv * 14.0;
-			float c1 = _gobo_voronoi(p);
-			float caustic = pow(1.0 - c1, 3.0) * 2.0;
-			raw_mask = clamp(caustic * smoothstep(0.48, 0.40, r), 0.0, 1.0);
-			break;
-		}
-		case 18: { // Drifting Cloud Shadows
-			float clouds = _gobo_fbm(uv * 4.0);
-			raw_mask = smoothstep(0.35, 0.70, clouds) * smoothstep(0.48, 0.35, r);
-			break;
-		}
-		case 19: { // Door Ajar (Light Wedge)
-			float left_jamb = smoothstep(-0.01, 0.01, uv.x + 0.32);
-			float door_slab = smoothstep(0.015, -0.015, uv.x - (uv.y * 0.40 - 0.05));
-			raw_mask = left_jamb * door_slab * smoothstep(0.48, 0.44, r);
-			break;
-		}
-		case 20: { // Clean Photographic Spot
-			raw_mask = smoothstep(0.48, 0.38, r);
-			break;
-		}
-		default: {
-			raw_mask = smoothstep(0.48, 0.42, r);
-			break;
-		}
-	}
-
-	return apply_proj_sharpness(raw_mask, sharpness);
-}
-
-// ============================================================================
-// 20 CURATED OMNI LIGHT GOBOS
-// ============================================================================
-float eval_proj_omni(int preset, vec3 d, float sharpness) {
-	float theta = atan(d.x, d.z);
-	float phi = asin(clamp(d.y, -1.0, 1.0));
-	float raw_mask = 1.0;
-
-	switch (preset) {
-		case 1: { // Cubic Room Box
-			float box = max(max(abs(d.x), abs(d.y)), abs(d.z));
-			raw_mask = smoothstep(0.92, 0.90, box);
-			break;
-		}
-		case 2: { // Room Window Opening
-			float front = (d.z > 0.0) ? 1.0 : 0.0;
-			vec2 win = d.xy / max(0.001, d.z);
-			float frame = smoothstep(0.02, -0.02, _gobo_sdBox(win, vec2(0.5, 0.4)));
-			float mullions = smoothstep(0.02, 0.04, min(abs(win.x), abs(win.y)));
-			raw_mask = front * frame * mullions;
-			break;
-		}
-		case 3: { // 360 Jail Cell Bars
-			float bars = smoothstep(0.04, 0.08, abs(sin(theta * 12.0)));
-			float tracks = smoothstep(0.75, 0.85, abs(d.y));
-			raw_mask = bars * (1.0 - tracks);
-			break;
-		}
-		case 4: { // Overhead Skylight & Rafters
-			float up = smoothstep(0.3, 0.5, d.y);
-			vec2 ceil_uv = d.xz / max(0.001, d.y);
-			float grid = smoothstep(0.05, 0.10, min(abs(fract(ceil_uv.x * 2.0) - 0.5), abs(fract(ceil_uv.y * 2.0) - 0.5)));
-			raw_mask = up * grid;
-			break;
-		}
-		case 5: { // Table Lamp Shade (Open Cone Top & Bottom)
-			float top_cone = smoothstep(0.32, 0.42, d.y);
-			float bot_cone = smoothstep(-0.32, -0.42, d.y);
-			float harp = smoothstep(0.02, 0.04, abs(d.x));
-			raw_mask = max(top_cone, bot_cone * harp);
-			break;
-		}
-		case 6: { // Trouble Light Wire Cage
-			float ribs = smoothstep(0.03, 0.06, abs(sin(theta * 4.0)));
-			float hoops = smoothstep(0.03, 0.06, abs(sin(phi * 8.0)));
-			float cap = smoothstep(0.70, 0.80, d.y);
-			raw_mask = (1.0 - cap) * ribs * hoops;
-			break;
-		}
-		case 7: { // Moroccan Punched Lantern
-			float filigree = abs(sin(theta * 10.0) * cos(phi * 8.0));
-			raw_mask = smoothstep(0.72, 0.85, filigree);
-			break;
-		}
-		case 8: { // Shoji Lantern Frame
-			float posts = smoothstep(0.05, 0.10, abs(abs(d.x) - abs(d.z)));
-			float ribs = smoothstep(0.03, 0.06, abs(fract(d.y * 8.0) - 0.5));
-			float caps = smoothstep(0.65, 0.75, abs(d.y));
-			raw_mask = (1.0 - caps) * posts * ribs;
-			break;
-		}
-		case 9: { // Coach Carriage Lantern
-			float corner_posts = smoothstep(0.04, 0.08, min(abs(d.x - d.z), abs(d.x + d.z)));
-			float caps = smoothstep(0.65, 0.75, abs(d.y));
-			raw_mask = (1.0 - caps) * corner_posts;
-			break;
-		}
-		case 10: { // Chandelier Crystal Facets
-			float facets = _gobo_voronoi(vec2(theta * 4.0, phi * 6.0));
-			raw_mask = smoothstep(0.1, 0.35, facets);
-			break;
-		}
-		case 11: { // Ceiling Fan Below Fixture
-			float down = smoothstep(-0.2, -0.5, d.y);
-			float blades = smoothstep(0.05, 0.12, abs(sin(theta * 2.0)));
-			raw_mask = max(1.0 - down, blades);
-			break;
-		}
-		case 12: { // Recessed Downlight (100% Down)
-			raw_mask = smoothstep(0.0, -0.15, d.y);
-			break;
-		}
-		case 13: { // Torchier Uplight (100% Up)
-			raw_mask = smoothstep(0.0, 0.15, d.y);
-			break;
-		}
-		case 14: { // 360 Forest Tree Trunks
-			float trunks = smoothstep(0.08, 0.18, abs(sin(theta * 6.0)));
-			raw_mask = (abs(d.y) < 0.5) ? trunks : 1.0;
-			break;
-		}
-		case 15: { // 360 Underwater Caustics
-			float c = _gobo_voronoi(vec2(theta * 3.0, phi * 5.0));
-			raw_mask = clamp(pow(1.0 - c, 2.5) * 1.8, 0.0, 1.0);
-			break;
-		}
-		case 16: { // Disco / Mirror Ball
-			vec2 tiles = fract(vec2(theta * 7.9577, phi * 12.0));
-			raw_mask = smoothstep(0.22, 0.08, length(tiles - 0.5));
-			break;
-		}
-		case 17: { // Dual-Beam Lighthouse Beacon
-			float beam = pow(abs(cos(theta)), 36.0);
-			float vert = smoothstep(0.18, 0.0, abs(phi));
-			raw_mask = beam * vert;
-			break;
-		}
-		case 18: { // Sci-Fi Hexagonal Shield Bubble
-			vec2 h = abs(vec2(theta * 3.8197, phi * 6.0));
-			float hex = max(h.x * 0.866 + h.y * 0.5, h.y);
-			raw_mask = smoothstep(0.08, 0.16, abs(fract(hex * 3.0) - 0.5));
-			break;
-		}
-		case 19: { // 360 Venetian Slats
-			raw_mask = smoothstep(0.2, 0.4, abs(sin(phi * 24.0)));
-			break;
-		}
-		case 20: { // Clean Full Omni Sphere
-			raw_mask = 1.0;
-			break;
-		}
-		default: {
-			raw_mask = 1.0;
-			break;
-		}
-	}
-
-	return apply_proj_sharpness(raw_mask, sharpness);
 }
 
 
@@ -1368,6 +1045,56 @@ uniform highp sampler2D screen_texture; // texunit:-8
 
 uniform highp sampler2DArray projector_array; // texunit:-11
 
+vec4 projector_bicubic_mip(highp sampler2DArray tex, vec2 uv, float layer, int mip, vec2 mip_size) {
+	vec2 inv_size = 1.0 / mip_size;
+	vec2 tex_coords = uv * mip_size - 0.5;
+	vec2 fxy = fract(tex_coords);
+	tex_coords -= fxy;
+
+	vec2 fxy2 = fxy * fxy;
+	vec2 fxy3 = fxy2 * fxy;
+
+	vec2 w0 = (1.0 / 6.0) * (1.0 - 3.0 * fxy + 3.0 * fxy2 - fxy3);
+	vec2 w1 = (1.0 / 6.0) * (4.0 - 6.0 * fxy2 + 3.0 * fxy3);
+	vec2 w2 = (1.0 / 6.0) * (1.0 + 3.0 * fxy + 3.0 * fxy2 - 3.0 * fxy3);
+	vec2 w3 = (1.0 / 6.0) * fxy3;
+
+	vec2 g0 = w0 + w1;
+	vec2 g1 = w2 + w3;
+	vec2 h0 = (w1 / g0) - 0.5 + tex_coords;
+	vec2 h1 = (w3 / g1) + 1.5 + tex_coords;
+
+	vec2 uv0 = h0 * inv_size;
+	vec2 uv1 = h1 * inv_size;
+
+	float fl_mip = float(mip);
+	vec4 tex00 = textureLod(tex, vec3(uv0.x, uv0.y, layer), fl_mip);
+	vec4 tex10 = textureLod(tex, vec3(uv1.x, uv0.y, layer), fl_mip);
+	vec4 tex01 = textureLod(tex, vec3(uv0.x, uv1.y, layer), fl_mip);
+	vec4 tex11 = textureLod(tex, vec3(uv1.x, uv1.y, layer), fl_mip);
+
+	tex00 = mix(tex10, tex00, g0.x);
+	tex01 = mix(tex11, tex01, g0.x);
+	return mix(tex01, tex00, g0.y);
+}
+
+vec4 texture_projector_bicubic(highp sampler2DArray tex, vec2 uv, float layer, float lod) {
+	vec2 base_size = vec2(textureSize(tex, 0).xy);
+	float max_lod = log2(max(base_size.x, 1.0));
+	lod = clamp(lod, 0.0, max_lod);
+
+	int mip0 = int(floor(lod));
+	int mip1 = min(mip0 + 1, int(max_lod));
+	float f = fract(lod);
+
+	vec4 c0 = projector_bicubic_mip(tex, uv, layer, mip0, max(vec2(1.0), base_size * exp2(-float(mip0))));
+	if (f < 0.001 || mip0 == mip1) {
+		return c0;
+	}
+	vec4 c1 = projector_bicubic_mip(tex, uv, layer, mip1, max(vec2(1.0), base_size * exp2(-float(mip1))));
+	return mix(c0, c1, f);
+}
+
 #if defined(CUSTOM_TEXTURE_USED)
 uniform highp sampler2D custom_pass_texture; // texunit:-12
 #endif
@@ -1403,10 +1130,10 @@ const int LIGHT_SPOT = 2;
 int current_light_type = 0;
 vec4 current_shadow_coords = vec4(0.0);
 vec4 current_pssm_offset = vec4(0.0);
-#ifdef USE_MULTIPLE_RENDER_TARGETS
+//#ifdef USE_MULTIPLE_RENDER_TARGETS
 vec3 unshadowed_diffuse_light = vec3(0.0);
 vec3 unshadowed_specular_light = vec3(0.0);
-#endif
+//#endif
 
 in highp vec4 position_interp;
 uniform highp sampler2D depth_buffer; // texunit:-9
@@ -1648,7 +1375,7 @@ float contact_shadow_compute(vec3 pos, vec3 normal, vec3 dir, float max_distance
     // If the surface faces away from the light, standard diffuse lighting handles it.
     // Tracing here only causes self-shadowing acne.
     float NdotL = dot(normal, dir);
-    if (NdotL <= 0.0) return 1.0; 
+    if (NdotL <= 0.0) return 1.0;
 
     if (abs(dir.z) > 0.999) return 1.0;
 
@@ -1661,7 +1388,7 @@ float contact_shadow_compute(vec3 pos, vec3 normal, vec3 dir, float max_distance
     vec3 ray_end = ray_start + dir * max_distance;
 
     // Near-Plane Clipping
-    float near_plane = -0.1; 
+    float near_plane = -0.1;
     if (ray_end.z > near_plane) {
         float t = (near_plane - ray_start.z) / dir.z;
         ray_end = ray_start + dir * t;
@@ -1681,12 +1408,12 @@ float contact_shadow_compute(vec3 pos, vec3 normal, vec3 dir, float max_distance
 
     vec3 delta_uv = uv_end - uv_start;
     vec2 delta_pixels = abs(delta_uv.xy / screen_pixel_size);
-    
+
     float steps = max(delta_pixels.x, delta_pixels.y);
     if (steps < 1.0) return 1.0;
-    
+
     float max_steps = 64.0;
-    steps = min(steps, max_steps); 
+    steps = min(steps, max_steps);
     vec3 step_uv = delta_uv / steps;
 
     // Dither jitter
@@ -1698,8 +1425,9 @@ float contact_shadow_compute(vec3 pos, vec3 normal, vec3 dir, float max_distance
 
     float shadow = 1.0;
 
-    for (float i = 0.0; i < 64.0; i += 1.0) {
-        if (i >= steps) break;
+    int isteps = int(ceil(steps));
+    for (int i = 0; i < 64; i++) {
+        if (i >= isteps) break;
 
         if (any(lessThan(current_uv.xy, vec2(0.0))) || any(greaterThan(current_uv.xy, vec2(1.0)))) {
             break;
@@ -1710,7 +1438,7 @@ float contact_shadow_compute(vec3 pos, vec3 normal, vec3 dir, float max_distance
 
         // Depth epsilon prevents surface grazing float precision errors
         if (depth_diff > 0.00005 && depth_diff < thickness_tolerance) {
-            float ratio = (i + jitter) / steps;
+            float ratio = (float(i) + jitter) / steps;
             shadow = min(pow(ratio, 4.0), 1.0);
             break;
         }
@@ -1798,6 +1526,7 @@ vec3 F0(float metallic, float specular, vec3 albedo) {
 }
 
 void light_compute(vec3 N, vec3 L, vec3 V, vec3 B, vec3 T, vec3 light_color, vec3 attenuation, vec3 diffuse_color, vec3 transmission, float specular_blob_intensity, float roughness, float metallic, float specular, float rim, float rim_tint, float clearcoat, float clearcoat_gloss, float anisotropy, inout vec3 diffuse_light, inout vec3 specular_light, inout float alpha) {
+#if !defined(IS_UBERSHADER)
 #if defined(USE_LIGHT_SHADER_CODE)
 	// light is written by the light shader
 
@@ -2023,6 +1752,7 @@ LIGHT_SHADER_CODE
 #endif
 
 #endif //defined(USE_LIGHT_SHADER_CODE)
+#endif // !IS_UBERSHADER
 }
 
 float dither_ign(vec2 pos) {
@@ -2060,8 +1790,21 @@ float dither_white(vec2 pos) {
 	return ((p.x + p.y) & 1u) == 0u ? white : (1.0 - white);
 }
 
-float dither_sine(vec2 pos) {
-	return fract(sin(dot(pos, vec2(12.9898, 78.233))) * 43758.5453123);
+float _dither_sine(vec2 pos) {
+    return fract(sin(dot(pos, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float dither_sine(vec2 pos) { // something stupid
+    vec2 p = pos * -0.18;
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+
+    vec2 dab = smoothstep(0.0, 0.4, f) * smoothstep(1.0, 0.6, f);
+    float blend = dab.x * dab.y;
+
+    float centerQuad = _dither_sine(i);
+
+    return mix(0.0, centerQuad, blend);
 }
 
 float get_shadow_dither(vec2 pos, float mode_f, float temporal_offset) {
@@ -2085,10 +1828,11 @@ float quick_hash(vec2 pos) {
 	return dither_ign(pos);
 }
 
-
-
-
 float sample_shadow(highp sampler2DShadow shadow, vec2 shadow_pixel_size, vec2 pos, float depth, vec4 clamp_rect, float shadow_blur, float shadow_dither_mode, float shadow_temporal_offset) {
+#if defined(IS_UBERSHADER)
+	return 1.0;
+#endif
+#if !defined(IS_UBERSHADER)
     if (shadow_blur < 0.001) {
         return textureProj(shadow, vec4(pos, depth, 1.0));
     }
@@ -2154,7 +1898,7 @@ float sample_shadow(highp sampler2DShadow shadow, vec2 shadow_pixel_size, vec2 p
 
 #ifndef SHADOW_MODE_PCF_LOW //ubershader-runtime
 #ifdef SHADOW_MODE_PCF_HIGH //ubershader-runtime
-	// PCF13 (high quality) - Optimized with textureGather
+	// PCF13 (high quality)
 	avg += textureProj(shadow, vec4(pos + vec2(shadow_pixel_size.x * 2.0, 0.0), depth, 1.0));
 	avg += textureProj(shadow, vec4(pos + vec2(-shadow_pixel_size.x * 2.0, 0.0), depth, 1.0));
 	avg += textureProj(shadow, vec4(pos + vec2(0.0, shadow_pixel_size.y * 2.0), depth, 1.0));
@@ -2173,7 +1917,7 @@ float sample_shadow(highp sampler2DShadow shadow, vec2 shadow_pixel_size, vec2 p
 	vec4 g3 = textureGather(shadow, pos + vec2( 0.5,  0.5) * shadow_pixel_size, depth);
 
 	avg += dot(g0, vec4(1.0)) + dot(g1, vec4(1.0)) + dot(g2, vec4(1.0)) + dot(g3, vec4(1.0));
-	
+
 	// Total accumulated: 1 (initial center) + 4 (outer cross) + 16 (inner 3x3 gathers) = 21 samples.
 	return avg * (1.0 / 21.0);
 #endif //ubershader-runtime
@@ -2249,6 +1993,7 @@ float sample_shadow(highp sampler2DShadow shadow, vec2 shadow_pixel_size, vec2 p
 
 #endif //ubershader-runtime
 #endif //ubershader-runtime
+#endif // !IS_UBERSHADER
 }
 
 #ifdef RENDER_DEPTH_DUAL_PARABOLOID //ubershader-skip
@@ -2269,17 +2014,13 @@ float get_omni_attenuation(float distance, float inv_range, float decay) {
 #endif
 
 void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 binormal, vec3 tangent, vec3 albedo, vec3 transmission, float roughness, float metallic, float specular, float rim, float rim_tint, float clearcoat, float clearcoat_gloss, float anisotropy, float p_blob_intensity, inout vec3 diffuse_light, inout vec3 specular_light, inout float alpha) {
+#if !defined(IS_UBERSHADER)
     vec3 light_rel_vec = omni_lights[idx].light_pos_inv_radius.xyz - vertex;
 	vec3 local_light_rel_vec = -(omni_lights[idx].light_inverse_matrix * vec4(vertex, 1.0)).xyz;
-	
-	float m_len = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
-	vec3 norm_l = m_len > 0.0 ? abs(local_light_rel_vec) / m_len : vec3(0.0);
-	vec3 l2 = norm_l * norm_l;
-	vec3 l4 = l2 * l2;
-	float sq_length = m_len * sqrt(sqrt(sqrt(l4.x * l4.x + l4.y * l4.y + l4.z * l4.z)));
-	
+
+	float sq_length = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
 	float light_length = mix(length(local_light_rel_vec), sq_length, omni_lights[idx].shadow_extra_params.y);
-	
+
 	float normalized_distance = light_length * omni_lights[idx].light_pos_inv_radius.w;
 	float omni_attenuation;
 	if (normalized_distance < 1.0) {
@@ -2296,7 +2037,6 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 
 	vec3 light_attenuation = vec3(omni_attenuation);
 
-	int omni_proj = int(omni_lights[idx].light_projector_params.x + 0.5);
 	int omni_tex_layer = int(omni_lights[idx].light_projector_params.y + 0.5);
 	int omni_proj_flags = int(omni_lights[idx].light_projector_params.z + 0.5);
 	bool omni_proj_blur_map = (omni_proj_flags & 1) != 0;
@@ -2316,12 +2056,11 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 		if (omni_lights[idx].light_projector_extra.z > 0.5) {
 			tex_uv = fract(tex_uv);
 		}
-		omni_proj_sample = textureLod(projector_array, vec3(tex_uv, float(omni_tex_layer)), omni_lights[idx].light_projector_extra.y);
+		float omni_max_lod = log2(float(max(textureSize(projector_array, 0).x, 1)));
+		float omni_base_lod = omni_lights[idx].light_projector_extra.y;
+		float omni_lod = mix(omni_base_lod, max(omni_base_lod, omni_max_lod), clamp(normalized_distance * omni_lights[idx].light_projector_color.a, 0.0, 1.0));
+		omni_proj_sample = texture_projector_bicubic(projector_array, tex_uv, float(omni_tex_layer), omni_lod);
 		omni_proj_mask = dot(omni_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
-		has_omni_proj = true;
-	} else if (omni_proj > 0) {
-		vec3 proj_dir = normalize(local_light_rel_vec);
-		omni_proj_mask = eval_proj_omni(omni_proj, proj_dir, omni_lights[idx].light_projector_color.a);
 		has_omni_proj = true;
 	}
 
@@ -2392,12 +2131,8 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	bool omni_proj_only = (!omni_proj_disabled) && (omni_lights[idx].light_projector_extra.w > 0.5);
 
 	if (!omni_proj_disabled && has_omni_proj) {
-		if (omni_lights[idx].light_projector_params.y >= -0.5) {
-			vec3 tinted_light = light_color * omni_proj_sample.rgb;
-			light_color = mix(omni_lights[idx].light_projector_color.rgb, tinted_light, omni_proj_sample.a);
-		} else if (omni_proj > 0) {
-			light_color = mix(omni_lights[idx].light_projector_color.rgb, light_color, omni_proj_mask);
-		}
+		vec3 tinted_light = light_color * omni_proj_sample.rgb;
+		light_color = mix(omni_lights[idx].light_projector_color.rgb, tinted_light, omni_proj_sample.a);
 	}
 
 	if (omni_proj_only) {
@@ -2409,20 +2144,15 @@ void light_process_omni(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	}
 
 	light_compute(normal, normalize(light_rel_vec), eye_vec, binormal, tangent, light_color, light_attenuation, albedo, transmission, omni_lights[idx].light_params.z * p_blob_intensity, roughness, metallic, specular, rim * omni_attenuation, rim_tint, clearcoat, clearcoat_gloss, anisotropy, diffuse_light, specular_light, alpha);
+#endif // !IS_UBERSHADER
 }
 
 void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 binormal, vec3 tangent, vec3 albedo, vec3 transmission, float roughness, float metallic, float specular, float rim, float rim_tint, float clearcoat, float clearcoat_gloss, float anisotropy, float p_blob_intensity, inout vec3 diffuse_light, inout vec3 specular_light, inout float alpha) {
+#if !defined(IS_UBERSHADER)
 	vec3 light_rel_vec = spot_lights[idx].light_pos_inv_radius.xyz - vertex;
 	vec3 local_light_rel_vec = -(spot_lights[idx].light_inverse_matrix * vec4(vertex, 1.0)).xyz;
 
-	// Distance attenuation (L8 superellipsoid)
-	float m_len = max(max(abs(local_light_rel_vec.x), abs(local_light_rel_vec.y)), abs(local_light_rel_vec.z));
-	vec3 norm_l = m_len > 0.0 ? abs(local_light_rel_vec) / m_len : vec3(0.0);
-	vec3 l2 = norm_l * norm_l;
-	vec3 l4 = l2 * l2;
-	float sq_length = m_len * sqrt(sqrt(sqrt(l4.x * l4.x + l4.y * l4.y + l4.z * l4.z)));
-
-	float light_length = mix(length(local_light_rel_vec), sq_length, spot_lights[idx].shadow_extra_params.y);
+	float light_length = length(local_light_rel_vec);
 	float normalized_distance = light_length * spot_lights[idx].light_pos_inv_radius.w;
 	float spot_attenuation;
 	if (normalized_distance < 1.0) {
@@ -2437,25 +2167,30 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 
 	if (spot_attenuation <= 0.0001) return;
 
-	// Spot cone / angular attenuation (L8 superellipse)
+	// Spot cone / angular attenuation
 	vec3 spot_dir = vec3(0.0, 0.0, -1.0);
 	float spot_cutoff = spot_lights[idx].light_params.y;
 	vec3 L = -local_light_rel_vec;
 
-	float m_dir = max(abs(L.x), abs(L.y));
-	vec2 norm_L = m_dir > 0.0 ? abs(L.xy) / m_dir : vec2(0.0);
-	vec2 lxy2 = norm_L * norm_L;
-	vec2 lxy4 = lxy2 * lxy2;
-	float sq_dir = m_dir * sqrt(sqrt(sqrt(lxy4.x * lxy4.x + lxy4.y * lxy4.y)));
+	// Circular spot rim
+	float scos_circ = max(dot(normalize(L), spot_dir), spot_cutoff);
+	float spot_rim_circ = max(0.0001, (1.0 - scos_circ) / (1.0 - spot_cutoff));
 
-	vec3 L_dir = mix(L, vec3(sq_dir, 0.0, L.z), spot_lights[idx].shadow_extra_params.y);
+	// Square spot rim (True square boundary, 0 diagonal creases, 0 crosshair)
+	float spot_rim_sq = 1.0;
+	if (L.z < -0.0001) {
+		float tan_angle = sqrt(max(0.0, 1.0 - spot_cutoff * spot_cutoff)) / max(0.001, spot_cutoff);
+		vec2 uv = L.xy / (-L.z * tan_angle);
+		if (max(abs(uv.x), abs(uv.y)) <= 1.0) {
+			vec2 uv2 = uv * uv;
+			spot_rim_sq = max(0.0001, uv2.x + uv2.y - uv2.x * uv2.y);
+		}
+	}
 
-	float scos = max(dot(normalize(L_dir), spot_dir), spot_cutoff);
-	float spot_rim = max(0.0001, (1.0 - scos) / (1.0 - spot_cutoff));
+	float spot_rim = mix(spot_rim_circ, spot_rim_sq, spot_lights[idx].shadow_extra_params.y);
 	spot_attenuation *= 1.0 - pow(spot_rim, spot_lights[idx].light_params.x);
 	vec3 light_attenuation = vec3(spot_attenuation);
 
-	int spot_proj = int(spot_lights[idx].light_projector_params.x + 0.5);
 	int spot_tex_layer = int(spot_lights[idx].light_projector_params.y + 0.5);
 	int spot_proj_flags = int(spot_lights[idx].light_projector_params.z + 0.5);
 	bool spot_proj_blur_map = (spot_proj_flags & 1) != 0;
@@ -2469,6 +2204,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	bool spot_in_bounds = false;
 
 	if (spot_lights[idx].light_projector_params.y >= -0.5) {
+		has_spot_proj = true;
 		float dist_z = local_light_rel_vec.z;
 		if (dist_z > 0.001) {
 			float spot_cutoff_v = spot_lights[idx].light_params.y;
@@ -2482,24 +2218,18 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 			}
 			spot_in_bounds = repeat || (tex_uv.x >= 0.0 && tex_uv.x <= 1.0 && tex_uv.y >= 0.0 && tex_uv.y <= 1.0);
 			if (spot_in_bounds) {
-				spot_proj_sample = textureLod(projector_array, vec3(tex_uv, float(spot_tex_layer)), spot_lights[idx].light_projector_extra.y);
+				float spot_max_lod = log2(float(max(textureSize(projector_array, 0).x, 1)));
+				float spot_base_lod = spot_lights[idx].light_projector_extra.y;
+				float spot_lod = mix(spot_base_lod, max(spot_base_lod, spot_max_lod), clamp(normalized_distance * spot_lights[idx].light_projector_color.a, 0.0, 1.0));
+				spot_proj_sample = texture_projector_bicubic(projector_array, tex_uv, float(spot_tex_layer), spot_lod);
 				spot_proj_mask = dot(spot_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
-				has_spot_proj = true;
 			}
 		}
-	} else if (spot_proj > 0) {
-		float dist_z = max(0.001, local_light_rel_vec.z);
-		float spot_cutoff_v = spot_lights[idx].light_params.y;
-		float tan_angle = max(0.001, sqrt(max(0.0, 1.0 - spot_cutoff_v * spot_cutoff_v)) / max(0.001, spot_cutoff_v));
-		vec2 proj_uv = local_light_rel_vec.xy / (dist_z * tan_angle);
-		spot_proj_mask = eval_proj_spot(spot_proj, proj_uv, spot_lights[idx].light_projector_color.a);
-		has_spot_proj = true;
-		spot_in_bounds = true;
 	}
 
 	float spot_blur = spot_lights[idx].shadow_extra_params.x;
 	if (spot_proj_blur_map && has_spot_proj) {
-		float blur_val = spot_proj_mask;
+		float blur_val = spot_in_bounds ? spot_proj_mask : 0.0;
 		if (spot_proj_invert_blur) {
 			blur_val = 1.0 - blur_val;
 		}
@@ -2542,16 +2272,12 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 
 	vec3 light_color = spot_lights[idx].light_color_energy.rgb;
 
-	if (!spot_proj_disabled) {
-		if (spot_lights[idx].light_projector_params.y >= -0.5) {
-			if (spot_in_bounds) {
-				vec3 tinted_light = light_color * spot_proj_sample.rgb;
-				light_color = mix(spot_lights[idx].light_projector_color.rgb, tinted_light, spot_proj_sample.a);
-			} else {
-				light_color = spot_lights[idx].light_projector_color.rgb;
-			}
-		} else if (spot_proj > 0) {
-			light_color = mix(spot_lights[idx].light_projector_color.rgb, light_color, spot_proj_mask);
+	if (!spot_proj_disabled && has_spot_proj) {
+		if (spot_in_bounds) {
+			vec3 tinted_light = light_color * spot_proj_sample.rgb;
+			light_color = mix(spot_lights[idx].light_projector_color.rgb, tinted_light, spot_proj_sample.a);
+		} else {
+			light_color = spot_lights[idx].light_projector_color.rgb;
 		}
 	}
 
@@ -2564,6 +2290,7 @@ void light_process_spot(int idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 bi
 	}
 
 	light_compute(normal, normalize(light_rel_vec), eye_vec, binormal, tangent, light_color, light_attenuation, albedo, transmission, spot_lights[idx].light_params.z * p_blob_intensity, roughness, metallic, specular, rim * spot_attenuation, rim_tint, clearcoat, clearcoat_gloss, anisotropy, diffuse_light, specular_light, alpha);
+#endif // !IS_UBERSHADER
 }
 
 void reflection_process(int idx, vec3 vertex, vec3 normal, vec3 binormal, vec3 tangent, float roughness, float anisotropy, vec3 ambient, vec3 skybox, inout highp vec4 reflection_accum, inout highp vec4 ambient_accum) {
@@ -2782,12 +2509,7 @@ uniform mediump vec4[12] lightmap_captures;
 
 #ifdef USE_GI_PROBES //ubershader-skip
 
-#if !defined(UBERSHADER_COMPAT)
 uniform mediump sampler3D gi_probe1; //texunit:-10
-#else
-uniform mediump sampler3D gi_probe1_uber; //texunit:-12
-#define gi_probe1 gi_probe1_uber
-#endif
 uniform highp mat4 gi_probe_xform1;
 uniform highp vec3 gi_probe_bounds1;
 uniform highp vec3 gi_probe_cell_size1;
@@ -2978,7 +2700,7 @@ void main() {
 
 	float alpha = 1.0;
 	custom_pass_data = vec4(0.0);
-	
+
 #if defined(ALPHA_SCISSOR_USED)
 	float alpha_scissor = 0.5;
 #endif
@@ -3102,9 +2824,10 @@ FRAGMENT_SHADER_CODE
 
 #endif //ubershader-runtime
 
-	vec3 ambient_light;
+	vec3 ambient_light = vec3(0.0);
 	vec3 env_reflection_light = vec3(0.0, 0.0, 0.0);
 
+#if !defined(IS_UBERSHADER)
 	vec3 eye_vec = view;
 
 	// IBL precalculations
@@ -3268,8 +2991,8 @@ FRAGMENT_SHADER_CODE
 	unshadowed_diffuse_light = diffuse_light;
 #endif
 
-#ifdef USE_LIGHT_DIRECTIONAL //ubershader-runtime
 
+#ifdef USE_LIGHT_DIRECTIONAL //ubershader-runtime
 	current_light_type = LIGHT_DIRECTIONAL;
 	current_pssm_offset = shadow_split_offsets;
 	current_shadow_coords = vec4(0.0);
@@ -3306,7 +3029,7 @@ FRAGMENT_SHADER_CODE
 		}
 		dir_in_bounds = dir_projector_params1.z > 0.5 || (dir_uv.x >= 0.0 && dir_uv.x <= 1.0 && dir_uv.y >= 0.0 && dir_uv.y <= 1.0);
 		if (dir_in_bounds) {
-			dir_proj_sample = textureLod(projector_array, vec3(dir_uv, float(dir_tex_layer)), dir_projector_params3.y);
+			dir_proj_sample = texture_projector_bicubic(projector_array, dir_uv, float(dir_tex_layer), dir_projector_params3.y);
 			dir_proj_mask = dot(dir_proj_sample.rgb, vec3(0.299, 0.587, 0.114));
 		}
 	}
@@ -3575,9 +3298,13 @@ FRAGMENT_SHADER_CODE
 
 #endif // USE_SHADOW_TO_OPACITY
 
+#endif // !IS_UBERSHADER
+
 #ifdef RENDER_DEPTH //ubershader-runtime
 //nothing happens, so a tree-ssa optimizer will result in no fragment shader :)
 #else //ubershader-runtime
+
+#if !defined(IS_UBERSHADER)
 
 	specular_light *= reflection_multiplier;
 	ambient_light *= albedo; //ambient must be multiplied by albedo at the end
@@ -3647,6 +3374,14 @@ FRAGMENT_SHADER_CODE
 		unshadowed_diffuse_light *= rev_amount;
 #endif
 	}
+
+#else // IS_UBERSHADER
+
+	diffuse_light = albedo;
+	specular_light = vec3(0.0);
+	ambient_light = vec3(0.0);
+
+#endif // !IS_UBERSHADER
 
 #ifdef USE_MULTIPLE_RENDER_TARGETS //ubershader-runtime
 

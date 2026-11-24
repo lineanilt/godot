@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TAA" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Temporal Anti-Aliasing with per-pixel OpenGL 4.3 velocity vectors, Catmull-Rom history resampling, YCoCg variance clipping, and RCAS sharpening.
+	</brief_description>
+	<description>
+		Applies sub-pixel camera jitter (Halton or R2) to the active 3D camera, rasterizes per-pixel rigid, [MultiMeshInstance], and skinned [Skeleton] motion vectors in OpenGL 4.3, and resolves temporal history using 5-tap Catmull-Rom filtering, 3x3 closest-depth velocity dilation, Karis luma weighting, YCoCg variance clipping, and contrast-adaptive sharpening.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_history_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F previous-frame resolved history [Texture].
+			</description>
+		</method>
+		<method name="get_velocity_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F per-pixel velocity [Texture] (RG = UV velocity, B = linear view-space depth, A = speed in pixels).
+			</description>
+		</method>
+		<method name="reset_history">
+			<return type="void" />
+			<description>
+				Clears stored previous-frame history and motion transforms. Call after camera cuts or teleports to avoid 1-frame ghosting.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="alpha_scissor_support" type="bool" setter="set_alpha_scissor_support" getter="get_alpha_scissor_support" default="true">
+			Respects [SpatialMaterial] alpha-scissor cutouts in the velocity/depth pass.
+		</member>
+		<member name="catmull_rom_history" type="bool" setter="set_catmull_rom_history" getter="get_catmull_rom_history" default="true">
+			Uses 5-tap Catmull-Rom bicubic resampling when reading history to prevent static image blurring.
+		</member>
+		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes are included in the velocity pass.
+		</member>
+		<member name="debug_mode" type="int" setter="set_debug_mode" getter="get_debug_mode" enum="TAA.DebugMode" default="0">
+			Visualizes velocity, jitter offset, or variance-clip rejection for debugging.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables real-time TAA inside the 3D editor viewport.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Master toggle for camera jitter, velocity generation, and temporal anti-aliasing.
+		</member>
+		<member name="history_blend" type="float" setter="set_history_blend" getter="get_history_blend" default="0.9">
+			Base blend weight toward accumulated temporal history on stationary surfaces.
+		</member>
+		<member name="jitter_pattern" type="int" setter="set_jitter_pattern" getter="get_jitter_pattern" enum="TAA.JitterPattern" default="1">
+			Sub-pixel sampling sequence used to jitter the camera projection.
+		</member>
+		<member name="jitter_scale" type="float" setter="set_jitter_scale" getter="get_jitter_scale" default="1.0">
+			Sub-pixel jitter amplitude multiplier.
+		</member>
+		<member name="motion_rejection" type="float" setter="set_motion_rejection" getter="get_motion_rejection" default="0.35">
+			Reduces history weight on fast-moving pixels to minimize trailing and ghosting.
+		</member>
+		<member name="sharpen_intensity" type="float" setter="set_sharpen_intensity" getter="get_sharpen_intensity" default="0.35">
+			Post-resolve contrast-adaptive sharpening strength.
+		</member>
+		<member name="variance_clipping" type="bool" setter="set_variance_clipping" getter="get_variance_clipping" default="true">
+			Clips reprojected history to the 3x3 YCoCg neighborhood variance box instead of min/max bounds.
+		</member>
+		<member name="variance_gamma" type="float" setter="set_variance_gamma" getter="get_variance_gamma" default="1.25">
+			Standard-deviation multiplier for YCoCg variance clipping. Lower values reject ghosting more aggressively; higher values increase temporal stability.
+		</member>
+	</members>
+	<constants>
+		<constant name="JITTER_HALTON_8" value="0" enum="JitterPattern">
+		</constant>
+		<constant name="JITTER_HALTON_16" value="1" enum="JitterPattern">
+		</constant>
+		<constant name="JITTER_R2" value="2" enum="JitterPattern">
+		</constant>
+		<constant name="DEBUG_NONE" value="0" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_VELOCITY" value="1" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_JITTER" value="2" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_CLIP_DIFF" value="3" enum="DebugMode">
+		</constant>
+	</constants>
+</class>

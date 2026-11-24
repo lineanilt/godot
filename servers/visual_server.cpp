@@ -34,6 +34,7 @@
 #include "core/math/vertex_cache_optimizer.h"
 #include "core/method_bind_ext.gen.inc"
 #include "core/project_settings.h"
+#include <atomic>
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_settings.h"
@@ -41,6 +42,9 @@
 
 VisualServer *VisualServer::singleton = nullptr;
 VisualServer *(*VisualServer::create_func)() = nullptr;
+
+std::atomic<int> vs_shader_compiles_pending(0);
+std::atomic<int> vs_force_sync_shader_compile(0);
 
 VisualServer *VisualServer::get_singleton() {
 	return singleton;
@@ -2430,7 +2434,6 @@ void VisualServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_FADE_START);
-	BIND_ENUM_CONSTANT(LIGHT_PARAM_PROJECTOR_PRESET);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_MAX);
 
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_PROJECTOR_REPEAT);
@@ -2734,12 +2737,17 @@ VisualServer::VisualServer() {
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadow_atlas/quadrant_2_subdiv", PropertyInfo(Variant::INT, "rendering/quality/shadow_atlas/quadrant_2_subdiv", PROPERTY_HINT_ENUM, "Disabled,1 Shadow,4 Shadows,16 Shadows,64 Shadows,256 Shadows,1024 Shadows"));
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadow_atlas/quadrant_3_subdiv", PropertyInfo(Variant::INT, "rendering/quality/shadow_atlas/quadrant_3_subdiv", PROPERTY_HINT_ENUM, "Disabled,1 Shadow,4 Shadows,16 Shadows,64 Shadows,256 Shadows,1024 Shadows"));
 
+
+	GLOBAL_DEF("rendering/quality/shaders/max_shader_compiler_threads", -1);
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shaders/max_shader_compiler_threads", PropertyInfo(Variant::INT, "rendering/quality/shaders/max_shader_compiler_threads", PROPERTY_HINT_RANGE, "-1,64,1"));
+
 	GLOBAL_DEF("rendering/quality/shadows/filter_mode", 1);
 	GLOBAL_DEF("rendering/quality/shadows/filter_mode.mobile", 0);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/filter_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/filter_mode", PROPERTY_HINT_ENUM, "Disabled (Fastest),PCF5 (Fast),PCF13 (Average),PCF25 (Slow)"));
 	GLOBAL_DEF("rendering/quality/shadows/use_dithering", false);
 	GLOBAL_DEF("rendering/quality/shadows/dither_mode", 0);
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/dither_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/dither_mode", PROPERTY_HINT_ENUM, "IGN,Bayer Matrix (16x),R2,White Noise,Sine-based Noise"));
+
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/shadows/dither_mode", PropertyInfo(Variant::INT, "rendering/quality/shadows/dither_mode", PROPERTY_HINT_ENUM, "IGN,Bayer Matrix (16x),R2,White Noise,Something stupid"));
 	GLOBAL_DEF("rendering/quality/shadows/temporal_dither", false);
 
 	GLOBAL_DEF("rendering/quality/light_projectors/max_projector_lights", 64);

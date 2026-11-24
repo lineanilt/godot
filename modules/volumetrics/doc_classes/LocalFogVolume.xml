@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="LocalFogVolume" inherits="Spatial" version="3.6">
+	<brief_description>
+		Localized volumetric fog region evaluated by VolumetricFog and BakedFogVolume.
+	</brief_description>
+	<description>
+		Defines a localized 3D shape (Box, Sphere, Ellipsoid, Cylinder, or Cone) with its own density, albedo, emission, edge falloff, 3D noise modulation, and blend mode.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+	</methods>
+	<constants>
+		<constant name="SHAPE_BOX" value="0" enum="Shape">
+		</constant>
+		<constant name="SHAPE_SPHERE" value="1" enum="Shape">
+		</constant>
+		<constant name="SHAPE_ELLIPSOID" value="2" enum="Shape">
+		</constant>
+		<constant name="SHAPE_CYLINDER" value="3" enum="Shape">
+		</constant>
+		<constant name="SHAPE_CONE" value="4" enum="Shape">
+		</constant>
+		<constant name="BLEND_ADDITIVE" value="0" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_MAX" value="1" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_MULTIPLY" value="2" enum="BlendMode">
+		</constant>
+		<constant name="BLEND_SUBTRACT" value="3" enum="BlendMode">
+		</constant>
+	</constants>
+</class>

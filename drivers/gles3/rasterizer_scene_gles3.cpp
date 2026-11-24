@@ -29,15 +29,39 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include <atomic>
+
 #include "rasterizer_scene_gles3.h"
 
 #include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "core/project_settings.h"
+#include "gl43_effect_helpers.h"
 #include "rasterizer_canvas_gles3.h"
 #include "rasterizer_storage_gles3.h"
 #include "servers/camera/camera_feed.h"
 #include "servers/visual/visual_server_raster.h"
+
+
+extern std::atomic<int> vs_force_sync_shader_compile;
+
+namespace {
+struct ScopedForceSyncShaderCompile {
+	bool active;
+	explicit ScopedForceSyncShaderCompile(bool p_enable) :
+			active(p_enable) {
+		if (active) {
+			vs_force_sync_shader_compile.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+	~ScopedForceSyncShaderCompile() {
+		if (active) {
+			vs_force_sync_shader_compile.fetch_sub(1, std::memory_order_relaxed);
+		}
+	}
+};
+} // namespace
+
 
 #ifndef GLES_OVER_GL
 #define glClearDepth glClearDepthf
@@ -1877,17 +1901,7 @@ void RasterizerSceneGLES3::_setup_light(RenderList::Element *e, const Transform 
 		GIProbeInstance *gipi = gi_probe_instance_owner.getptr(ridp[0]);
 
 		float bias_scale = e->instance->baked_light ? 1 : 0;
-		// Normally, lightmapping uses the same texturing units than the GI probes; however, in the case of the ubershader
-		// that's not a good idea because some hardware/drivers (Android/Intel) may fail to render if a single texturing unit
-		// is used through multiple kinds of samplers in the same shader.
-		// Moreover, since we don't know at this point if we are going to consume these textures from the ubershader or
-		// a conditioned one, the fact that async compilation is enabled is enough for us to switch to the alternative
-		// arrangement of texturing units.
-		if (storage->config.async_compilation_enabled) {
-			WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 12);
-		} else {
-			WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 10);
-		}
+		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 10);
 		glBindTexture(GL_TEXTURE_3D, gipi->tex_cache);
 		state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_XFORM1, gipi->transform_to_data * p_view_transform);
 		state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_BOUNDS1, gipi->bounds);
@@ -1896,26 +1910,6 @@ void RasterizerSceneGLES3::_setup_light(RenderList::Element *e, const Transform 
 		state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_NORMAL_BIAS1, gipi->probe ? gipi->probe->normal_bias * bias_scale : 0.0);
 		state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_BLEND_AMBIENT1, gipi->probe ? !gipi->probe->interior : false);
 		state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_CELL_SIZE1, gipi->cell_size_cache);
-		if (gi_probe_count > 1) {
-			GIProbeInstance *gipi2 = gi_probe_instance_owner.getptr(ridp[1]);
-
-			if (storage->config.async_compilation_enabled) {
-				WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 13);
-			} else {
-				WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
-			}
-			glBindTexture(GL_TEXTURE_3D, gipi2->tex_cache);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_XFORM2, gipi2->transform_to_data * p_view_transform);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_BOUNDS2, gipi2->bounds);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_CELL_SIZE2, gipi2->cell_size_cache);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_MULTIPLIER2, gipi2->probe ? gipi2->probe->dynamic_range * gipi2->probe->energy : 0.0);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_BIAS2, gipi2->probe ? gipi2->probe->bias * bias_scale : 0.0);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_NORMAL_BIAS2, gipi2->probe ? gipi2->probe->normal_bias * bias_scale : 0.0);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE_BLEND_AMBIENT2, gipi2->probe ? !gipi2->probe->interior : false);
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE2_ENABLED, true);
-		} else {
-			state.scene_shader.set_uniform(SceneShaderGLES3::GI_PROBE2_ENABLED, false);
-		}
 	} else if (!e->instance->lightmap_capture_data.empty()) {
 		glUniform4fv(state.scene_shader.get_uniform_location(SceneShaderGLES3::LIGHTMAP_CAPTURES), 12, (const GLfloat *)e->instance->lightmap_capture_data.ptr());
 
@@ -2035,6 +2029,340 @@ void RasterizerSceneGLES3::_render_list(RenderList::Element **p_elements, int p_
 	for (int i = 0; i < p_element_count; i++) {
 		RenderList::Element *e = p_elements[i];
 		RasterizerStorageGLES3::Material *material = e->material;
+
+		if (material && material->shader && material->shader->is_raw_glsl) {
+			if (!material->shader->valid || material->shader->raw_program == 0 || p_directional_add) {
+				if (ShaderGLES3::get_active()) {
+					ShaderGLES3::get_active()->unbind();
+				}
+				prev_material = nullptr;
+				prev_geometry = nullptr;
+				prev_owner = nullptr;
+				prev_base_type = VS::INSTANCE_MAX;
+				prev_shading = 0xFFFFFFFF;
+				prev_skeleton = nullptr;
+				prev_use_instancing = false;
+				prev_octahedral_compression = false;
+				prev_opaque_prepass = false;
+				first = true;
+				continue;
+			}
+
+			// Setup geometry first (blend shapes may bind scene_shader)
+			_setup_geometry(e, p_view_transform);
+			storage->info.render.surface_switch_count++;
+
+			if (ShaderGLES3::get_active()) {
+				ShaderGLES3::get_active()->unbind();
+			}
+
+			if (state.current_depth_test != (!material->shader->spatial.no_depth_test)) {
+				if (material->shader->spatial.no_depth_test) {
+					glDisable(GL_DEPTH_TEST);
+				} else {
+					glEnable(GL_DEPTH_TEST);
+				}
+				state.current_depth_test = !material->shader->spatial.no_depth_test;
+			}
+
+			if (state.current_depth_draw != material->shader->spatial.depth_draw_mode) {
+				switch (material->shader->spatial.depth_draw_mode) {
+					case RasterizerStorageGLES3::Shader::Spatial::DEPTH_DRAW_ALPHA_PREPASS: {
+						bool use_op = e->sort_key & RenderList::SORT_KEY_OPAQUE_PRE_PASS;
+						glDepthMask(use_op);
+					} break;
+					case RasterizerStorageGLES3::Shader::Spatial::DEPTH_DRAW_OPAQUE: {
+						glDepthMask(!p_alpha_pass);
+					} break;
+					case RasterizerStorageGLES3::Shader::Spatial::DEPTH_DRAW_ALWAYS: {
+						glDepthMask(GL_TRUE);
+					} break;
+					case RasterizerStorageGLES3::Shader::Spatial::DEPTH_DRAW_NEVER: {
+						glDepthMask(GL_FALSE);
+					} break;
+				}
+				state.current_depth_draw = material->shader->spatial.depth_draw_mode;
+			}
+
+			if (p_alpha_pass) {
+				int desired_blend_mode = material->shader->spatial.blend_mode;
+				if (desired_blend_mode != current_blend_mode) {
+					switch (desired_blend_mode) {
+						case RasterizerStorageGLES3::Shader::Spatial::BLEND_MODE_MIX: {
+							glBlendEquation(GL_FUNC_ADD);
+							if (storage->frame.current_rt && storage->frame.current_rt->flags[RasterizerStorage::RENDER_TARGET_TRANSPARENT]) {
+								glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+							} else {
+								glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+							}
+						} break;
+						case RasterizerStorageGLES3::Shader::Spatial::BLEND_MODE_ADD: {
+							glBlendEquation(GL_FUNC_ADD);
+							glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+						} break;
+						case RasterizerStorageGLES3::Shader::Spatial::BLEND_MODE_SUB: {
+							glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+							glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+						} break;
+						case RasterizerStorageGLES3::Shader::Spatial::BLEND_MODE_MUL: {
+							glBlendEquation(GL_FUNC_ADD);
+							if (storage->frame.current_rt && storage->frame.current_rt->flags[RasterizerStorage::RENDER_TARGET_TRANSPARENT]) {
+								glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_DST_ALPHA, GL_ZERO);
+							} else {
+								glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ZERO, GL_ONE);
+							}
+						} break;
+					}
+					current_blend_mode = desired_blend_mode;
+				}
+			}
+
+			_set_cull(e->sort_key & RenderList::SORT_KEY_MIRROR_FLAG, e->sort_key & RenderList::SORT_KEY_CULL_DISABLED_FLAG, p_reverse_cull);
+
+			RasterizerStorageGLES3::Shader *rshader = material->shader;
+			glUseProgram(rshader->raw_program);
+
+			auto upload_cm = [](GLint p_loc, const CameraMatrix &p_cm) {
+				float m[16];
+				for (int c = 0; c < 4; c++) {
+					for (int r = 0; r < 4; r++) {
+						m[c * 4 + r] = (float)p_cm.matrix[c][r];
+					}
+				}
+				glUniformMatrix4fv(p_loc, 1, GL_FALSE, m);
+			};
+			auto upload_xf = [](GLint p_loc, const Transform &p_t) {
+				float m[16] = {
+					(float)p_t.basis.elements[0][0], (float)p_t.basis.elements[1][0], (float)p_t.basis.elements[2][0], 0.0f,
+					(float)p_t.basis.elements[0][1], (float)p_t.basis.elements[1][1], (float)p_t.basis.elements[2][1], 0.0f,
+					(float)p_t.basis.elements[0][2], (float)p_t.basis.elements[1][2], (float)p_t.basis.elements[2][2], 0.0f,
+					(float)p_t.origin.x, (float)p_t.origin.y, (float)p_t.origin.z, 1.0f
+				};
+				glUniformMatrix4fv(p_loc, 1, GL_FALSE, m);
+			};
+
+			Transform view_xf = p_view_transform.affine_inverse();
+			const RasterizerStorageGLES3::Shader::RawBuiltins &rb = rshader->raw_builtins;
+			if (rb.projection_matrix >= 0) upload_cm(rb.projection_matrix, p_projection);
+			if (rb.inv_projection_matrix >= 0) upload_cm(rb.inv_projection_matrix, p_projection.inverse());
+			if (rb.view_matrix >= 0) upload_xf(rb.view_matrix, view_xf);
+			if (rb.camera_matrix >= 0) upload_xf(rb.camera_matrix, p_view_transform);
+			if (rb.model_matrix >= 0) upload_xf(rb.model_matrix, e->instance->transform);
+			if (rb.mvp_matrix >= 0) {
+				CameraMatrix mvp = p_projection * CameraMatrix(view_xf * e->instance->transform);
+				upload_cm(rb.mvp_matrix, mvp);
+			}
+			if (rb.normal_matrix >= 0) {
+				Basis nb = e->instance->transform.basis.inverse().transposed();
+				float nm[9] = {
+					(float)nb.elements[0][0], (float)nb.elements[1][0], (float)nb.elements[2][0],
+					(float)nb.elements[0][1], (float)nb.elements[1][1], (float)nb.elements[2][1],
+					(float)nb.elements[0][2], (float)nb.elements[1][2], (float)nb.elements[2][2]
+				};
+				glUniformMatrix3fv(rb.normal_matrix, 1, GL_FALSE, nm);
+			}
+			if (rb.camera_position >= 0) {
+				glUniform3f(rb.camera_position, (float)p_view_transform.origin.x, (float)p_view_transform.origin.y, (float)p_view_transform.origin.z);
+			}
+			if (rb.time >= 0) {
+				glUniform1f(rb.time, storage->frame.time[0]);
+			}
+			if (rb.viewport_size >= 0 && storage->frame.current_rt) {
+				glUniform2f(rb.viewport_size, (float)storage->frame.current_rt->width, (float)storage->frame.current_rt->height);
+			}
+
+			int tc = material->textures.size();
+			const RID *mtex = material->textures.ptr();
+			const RasterizerStorageGLES3::Shader::RawUniform *ru_ptr = rshader->raw_uniforms.ptr();
+			int ru_count = rshader->raw_uniforms.size();
+
+			for (int ui = 0; ui < ru_count; ui++) {
+				const RasterizerStorageGLES3::Shader::RawUniform &ru = ru_ptr[ui];
+				if (ru.tex_unit >= 0) {
+					WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + ru.tex_unit);
+					GLenum target = GL_TEXTURE_2D;
+					GLuint tex = storage->resources.white_tex;
+					if (ru.tex_unit < tc) {
+						RasterizerStorageGLES3::Texture *t = storage->texture_owner.getptr(mtex[ru.tex_unit]);
+						if (t) {
+							t = t->get_ptr();
+							if (t->render_target) {
+								t->render_target->used_in_frame = true;
+							}
+							target = t->target;
+							tex = t->tex_id;
+						}
+					}
+					glBindTexture(target, tex);
+					glUniform1i(ru.location, ru.tex_unit);
+					continue;
+				}
+
+				const Map<StringName, Variant>::Element *V = material->params.find(ru.name);
+				if (!V) {
+					continue;
+				}
+				const Variant &val = V->get();
+				if (ru.array_size > 1) {
+					if (ru.gl_type == GL_FLOAT_VEC3) {
+						Vector<float> buf;
+						buf.resize(ru.array_size * 3);
+						float *dst = buf.ptrw();
+						memset(dst, 0, sizeof(float) * buf.size());
+						if (val.get_type() == Variant::ARRAY) {
+							Array arr = val;
+							int cnt = MIN(arr.size(), ru.array_size);
+							for (int ai = 0; ai < cnt; ai++) {
+								Vector3 v = arr[ai];
+								dst[ai * 3 + 0] = (float)v.x;
+								dst[ai * 3 + 1] = (float)v.y;
+								dst[ai * 3 + 2] = (float)v.z;
+							}
+						} else if (val.get_type() == Variant::POOL_VECTOR3_ARRAY) {
+							PoolVector3Array arr = val;
+							int cnt = MIN(arr.size(), ru.array_size);
+							PoolVector3Array::Read r = arr.read();
+							for (int ai = 0; ai < cnt; ai++) {
+								dst[ai * 3 + 0] = (float)r[ai].x;
+								dst[ai * 3 + 1] = (float)r[ai].y;
+								dst[ai * 3 + 2] = (float)r[ai].z;
+							}
+						}
+						glUniform3fv(ru.location, ru.array_size, dst);
+						continue;
+					} else if (ru.gl_type == GL_FLOAT_VEC4) {
+						Vector<float> buf;
+						buf.resize(ru.array_size * 4);
+						float *dst = buf.ptrw();
+						memset(dst, 0, sizeof(float) * buf.size());
+						if (val.get_type() == Variant::ARRAY) {
+							Array arr = val;
+							int cnt = MIN(arr.size(), ru.array_size);
+							for (int ai = 0; ai < cnt; ai++) {
+								const Variant &av = arr[ai];
+								if (av.get_type() == Variant::COLOR) {
+									Color c = Color(av).to_linear();
+									dst[ai * 4 + 0] = c.r;
+									dst[ai * 4 + 1] = c.g;
+									dst[ai * 4 + 2] = c.b;
+									dst[ai * 4 + 3] = c.a;
+								} else if (av.get_type() == Variant::QUAT) {
+									Quat q = av;
+									dst[ai * 4 + 0] = (float)q.x;
+									dst[ai * 4 + 1] = (float)q.y;
+									dst[ai * 4 + 2] = (float)q.z;
+									dst[ai * 4 + 3] = (float)q.w;
+								} else if (av.get_type() == Variant::RECT2) {
+									Rect2 rc = av;
+									dst[ai * 4 + 0] = (float)rc.position.x;
+									dst[ai * 4 + 1] = (float)rc.position.y;
+									dst[ai * 4 + 2] = (float)rc.size.x;
+									dst[ai * 4 + 3] = (float)rc.size.y;
+								} else {
+									Plane p = av;
+									dst[ai * 4 + 0] = (float)p.normal.x;
+									dst[ai * 4 + 1] = (float)p.normal.y;
+									dst[ai * 4 + 2] = (float)p.normal.z;
+									dst[ai * 4 + 3] = (float)p.d;
+								}
+							}
+						} else if (val.get_type() == Variant::POOL_COLOR_ARRAY) {
+							PoolColorArray arr = val;
+							int cnt = MIN(arr.size(), ru.array_size);
+							PoolColorArray::Read r = arr.read();
+							for (int ai = 0; ai < cnt; ai++) {
+								Color c = r[ai].to_linear();
+								dst[ai * 4 + 0] = c.r;
+								dst[ai * 4 + 1] = c.g;
+								dst[ai * 4 + 2] = c.b;
+								dst[ai * 4 + 3] = c.a;
+							}
+						}
+						glUniform4fv(ru.location, ru.array_size, dst);
+						continue;
+					}
+				}
+				switch (ru.gl_type) {
+					case GL_BOOL:
+					case GL_INT: {
+						glUniform1i(ru.location, (int)val);
+					} break;
+					case GL_UNSIGNED_INT: {
+						glUniform1ui(ru.location, (GLuint)(int)val);
+					} break;
+					case GL_FLOAT: {
+						glUniform1f(ru.location, (float)(double)val);
+					} break;
+					case GL_FLOAT_VEC2: {
+						Vector2 v = val;
+						glUniform2f(ru.location, (float)v.x, (float)v.y);
+					} break;
+					case GL_FLOAT_VEC3: {
+						if (val.get_type() == Variant::COLOR) {
+							Color c = Color(val).to_linear();
+							glUniform3f(ru.location, c.r, c.g, c.b);
+						} else {
+							Vector3 v = val;
+							glUniform3f(ru.location, (float)v.x, (float)v.y, (float)v.z);
+						}
+					} break;
+					case GL_FLOAT_VEC4: {
+						if (val.get_type() == Variant::COLOR) {
+							Color c = Color(val).to_linear();
+							glUniform4f(ru.location, c.r, c.g, c.b, c.a);
+						} else if (val.get_type() == Variant::QUAT) {
+							Quat q = val;
+							glUniform4f(ru.location, (float)q.x, (float)q.y, (float)q.z, (float)q.w);
+						} else if (val.get_type() == Variant::RECT2) {
+							Rect2 rc = val;
+							glUniform4f(ru.location, (float)rc.position.x, (float)rc.position.y, (float)rc.size.x, (float)rc.size.y);
+						} else {
+							Plane p = val;
+							glUniform4f(ru.location, (float)p.normal.x, (float)p.normal.y, (float)p.normal.z, (float)p.d);
+						}
+					} break;
+					case GL_FLOAT_MAT2: {
+						Transform2D t = val;
+						float m[4] = {
+							(float)t.elements[0][0], (float)t.elements[0][1],
+							(float)t.elements[1][0], (float)t.elements[1][1]
+						};
+						glUniformMatrix2fv(ru.location, 1, GL_FALSE, m);
+					} break;
+					case GL_FLOAT_MAT3: {
+						Basis b = val;
+						float m[9] = {
+							(float)b.elements[0][0], (float)b.elements[1][0], (float)b.elements[2][0],
+							(float)b.elements[0][1], (float)b.elements[1][1], (float)b.elements[2][1],
+							(float)b.elements[0][2], (float)b.elements[1][2], (float)b.elements[2][2]
+						};
+						glUniformMatrix3fv(ru.location, 1, GL_FALSE, m);
+					} break;
+					case GL_FLOAT_MAT4: {
+						Transform t = val;
+						upload_xf(ru.location, t);
+					} break;
+					default:
+						break;
+				}
+			}
+
+			_render_geometry(e);
+
+			glUseProgram(0);
+			prev_material = nullptr;
+			prev_geometry = nullptr;
+			prev_owner = nullptr;
+			prev_base_type = VS::INSTANCE_MAX;
+			prev_shading = 0xFFFFFFFF;
+			prev_skeleton = nullptr;
+			prev_use_instancing = false;
+			prev_octahedral_compression = false;
+			prev_opaque_prepass = false;
+			first = true;
+			continue;
+		}
+
 		RasterizerStorageGLES3::Skeleton *skeleton = nullptr;
 		if (e->instance->skeleton.is_valid()) {
 			skeleton = storage->skeleton_owner.getornull(e->instance->skeleton);
@@ -2230,6 +2558,13 @@ void RasterizerSceneGLES3::_render_list(RenderList::Element **p_elements, int p_
 			}
 		}
 		if (!ShaderGLES3::get_active()) {
+			prev_material = nullptr;
+			prev_shading = shading;
+			prev_skeleton = skeleton;
+			prev_use_instancing = use_instancing;
+			prev_octahedral_compression = octahedral_compression;
+			prev_opaque_prepass = use_opaque_prepass;
+			first = true;
 			continue;
 		}
 
@@ -2899,7 +3234,7 @@ void RasterizerSceneGLES3::_setup_directional_light(int p_index, const Transform
 	ubo_data.dir_projector_color[2] = li->light_ptr->projector_color.b * dir_energy;
 	ubo_data.dir_projector_color[3] = li->light_ptr->projector_color.a;
 
-	ubo_data.dir_projector_params1[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+	ubo_data.dir_projector_params1[0] = 0.0f;
 	ubo_data.dir_projector_params1[1] = float(dir_proj_layer);
 	ubo_data.dir_projector_params1[2] = li->light_ptr->projector_repeat ? 1.0f : 0.0f;
 	ubo_data.dir_projector_params1[3] = li->light_ptr->projector_only ? 1.0f : 0.0f;
@@ -3048,7 +3383,7 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.light_projector_color[1] = li->light_ptr->projector_color.g * omni_energy;
 				ubo_data.shadow.light_projector_color[2] = li->light_ptr->projector_color.b * omni_energy;
 				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
-				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+				ubo_data.shadow.light_projector_params[0] = 0.0f;
 				ubo_data.shadow.light_projector_params[1] = float(omni_proj_layer);
 				int omni_proj_flags = 0;
 				if (li->light_ptr->projector_use_as_shadow_blur_map) omni_proj_flags |= 1;
@@ -3166,7 +3501,7 @@ void RasterizerSceneGLES3::_setup_lights(RID *p_light_cull_result, int p_light_c
 				ubo_data.shadow.light_projector_color[1] = li->light_ptr->projector_color.g * spot_energy;
 				ubo_data.shadow.light_projector_color[2] = li->light_ptr->projector_color.b * spot_energy;
 				ubo_data.shadow.light_projector_color[3] = li->light_ptr->projector_color.a;
-				ubo_data.shadow.light_projector_params[0] = li->light_ptr->param[VS::LIGHT_PARAM_PROJECTOR_PRESET];
+				ubo_data.shadow.light_projector_params[0] = 0.0f;
 				ubo_data.shadow.light_projector_params[1] = float(spot_proj_layer);
 				int spot_proj_flags = 0;
 				if (li->light_ptr->projector_use_as_shadow_blur_map) spot_proj_flags |= 1;
@@ -3489,7 +3824,7 @@ void RasterizerSceneGLES3::_render_mrts(Environment *env, const CameraMatrix &p_
 
 	_prepare_depth_texture();
 
-	if (env->ssao_enabled || env->ssr_enabled) {
+	if (env && (env->ssao_enabled || env->ssr_enabled)) {
 		//copy normal and roughness to effect buffer
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, storage->frame.current_rt->buffers.fbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT2);
@@ -3497,7 +3832,7 @@ void RasterizerSceneGLES3::_render_mrts(Environment *env, const CameraMatrix &p_
 		glBlitFramebuffer(0, 0, storage->frame.current_rt->width, storage->frame.current_rt->height, 0, 0, storage->frame.current_rt->width, storage->frame.current_rt->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	}
 
-	if (env->ssao_enabled) {
+	if (env && env->ssao_enabled) {
 		//copy diffuse to front buffer
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, storage->frame.current_rt->buffers.fbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -3704,7 +4039,7 @@ void RasterizerSceneGLES3::_render_mrts(Environment *env, const CameraMatrix &p_
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	}
 
-	if (env->ssr_enabled) {
+	if (env && env->ssr_enabled) {
 		//blur diffuse into effect mipmaps using separatable convolution
 		//storage->shaders.copy.set_conditional(CopyShaderGLES3::GAUSSIAN_HORIZONTAL,true);
 		_blur_effect_buffer();
@@ -3758,13 +4093,13 @@ void RasterizerSceneGLES3::_render_mrts(Environment *env, const CameraMatrix &p_
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
 	//copy reflection over diffuse, resolving SSR if needed
-	state.resolve_shader.set_conditional(ResolveShaderGLES3::USE_SSR, env->ssr_enabled);
+	state.resolve_shader.set_conditional(ResolveShaderGLES3::USE_SSR, env && env->ssr_enabled);
 	state.resolve_shader.bind();
 	state.resolve_shader.set_uniform(ResolveShaderGLES3::PIXEL_SIZE, Vector2(1.0 / storage->frame.current_rt->width, 1.0 / storage->frame.current_rt->height));
 
 	WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, storage->frame.current_rt->color);
-	if (env->ssr_enabled) {
+	if (env && env->ssr_enabled) {
 		WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, storage->frame.current_rt->effects.mip_maps[1].color);
 	}
@@ -3803,7 +4138,7 @@ void RasterizerSceneGLES3::_render_mrts(Environment *env, const CameraMatrix &p_
 	state.effect_blur_shader.set_conditional(EffectBlurShaderGLES3::SIMPLE_COPY, false);
 }
 
-void RasterizerSceneGLES3::_post_process(Environment *env, const CameraMatrix &p_cam_projection) {
+void RasterizerSceneGLES3::_post_process(Environment *env, const CameraMatrix &p_cam_projection, bool p_skip_buffer_resolve) {
 	//copy to front buffer
 
 	glDepthMask(GL_FALSE);
@@ -3818,7 +4153,7 @@ void RasterizerSceneGLES3::_post_process(Environment *env, const CameraMatrix &p
 	//copy specular to front buffer
 	//copy diffuse to effect buffer
 
-	if (storage->frame.current_rt->buffers.active) {
+	if (!p_skip_buffer_resolve && storage->frame.current_rt->buffers.active) {
 		//transfer to effect buffer if using buffers, also resolve MSAA
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, storage->frame.current_rt->buffers.fbo);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, storage->frame.current_rt->effects.mip_maps[0].sizes[0].fbo);
@@ -4393,6 +4728,8 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		state.ubo_data.screen_pixel_size[1] = 1.0 / viewport_height_pixels;
 	}
 
+	ScopedForceSyncShaderCompile sync_probe_shaders(p_reflection_probe.is_valid());
+
 	_setup_environment(env, p_cam_projection, p_cam_transform, p_eye, p_reflection_probe.is_valid());
 
 	/* DEPTH TEXTURE ONLY FAST PATH (Parity with render_shadow) */
@@ -4561,7 +4898,7 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		use_mrt = use_mrt && !storage->frame.current_rt->flags[RasterizerStorage::RENDER_TARGET_TRANSPARENT];
 		use_mrt = use_mrt && !storage->frame.current_rt->flags[RasterizerStorage::RENDER_TARGET_NO_3D_EFFECTS];
 		use_mrt = use_mrt && state.debug_draw != VS::VIEWPORT_DEBUG_DRAW_OVERDRAW;
-		use_mrt = use_mrt && (env->bg_mode != VS::ENV_BG_KEEP && env->bg_mode != VS::ENV_BG_CANVAS);
+		use_mrt = use_mrt && (!env || (env->bg_mode != VS::ENV_BG_KEEP && env->bg_mode != VS::ENV_BG_CANVAS));
 
 		glViewport(0, 0, storage->frame.current_rt->width, storage->frame.current_rt->height);
 
@@ -4923,6 +5260,49 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		}
 	}
 
+	if (!probe && storage->frame.current_rt && GL43EffectHelpers::has_scene_hooks(GL43EffectHelpers::HOOK_PRE_SCREEN_TEXTURE) && storage->frame.current_rt->effects.mip_maps[0].sizes.size() > 0) {
+		RasterizerStorageGLES3::RenderTarget *rt = storage->frame.current_rt;
+		if (!use_mrt && rt->buffers.active && !state.used_screen_texture) {
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->buffers.fbo);
+			glReadBuffer(GL_COLOR_ATTACHMENT0);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->effects.mip_maps[0].sizes[0].fbo);
+			glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		}
+
+		if (_run_gl43_scene_hooks(GL43EffectHelpers::HOOK_PRE_SCREEN_TEXTURE, p_cam_projection, rt->effects.mip_maps[0].color)) {
+			if (state.used_screen_texture) {
+				glDisable(GL_BLEND);
+				glDepthMask(GL_FALSE);
+				glDisable(GL_DEPTH_TEST);
+				glDisable(GL_CULL_FACE);
+				_blur_effect_buffer();
+			}
+
+			if (rt->buffers.active) {
+				glDisable(GL_BLEND);
+				glDepthMask(GL_FALSE);
+				glDisable(GL_DEPTH_TEST);
+				glDisable(GL_CULL_FACE);
+				state.effect_blur_shader.set_conditional(EffectBlurShaderGLES3::SIMPLE_COPY, true);
+				state.effect_blur_shader.bind();
+				state.effect_blur_shader.set_uniform(EffectBlurShaderGLES3::LOD, float(0));
+				glBindFramebuffer(GL_FRAMEBUFFER, rt->buffers.fbo);
+				GLuint db = GL_COLOR_ATTACHMENT0;
+				glDrawBuffers(1, &db);
+				glViewport(0, 0, rt->width, rt->height);
+				WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, rt->effects.mip_maps[0].color);
+				_copy_screen(true);
+				state.effect_blur_shader.set_conditional(EffectBlurShaderGLES3::SIMPLE_COPY, false);
+			} else {
+				glBindFramebuffer(GL_FRAMEBUFFER, rt->effects.mip_maps[0].sizes[0].fbo);
+				glViewport(0, 0, rt->width, rt->height);
+			}
+		}
+	}
+
 	if (storage->frame.current_rt && state.used_depth_texture && storage->frame.current_rt->buffers.active) {
 		_bind_depth_texture();
 	}
@@ -5009,10 +5389,23 @@ void RasterizerSceneGLES3::render_scene(const Transform &p_cam_transform, const 
 		return;
 	}
 
+	bool pre_post_resolved = false;
+	if (storage->frame.current_rt && GL43EffectHelpers::has_scene_hooks(GL43EffectHelpers::HOOK_PRE_POST_PROCESS) && storage->frame.current_rt->effects.mip_maps[0].sizes.size() > 0) {
+		RasterizerStorageGLES3::RenderTarget *rt = storage->frame.current_rt;
+		if (rt->buffers.active) {
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->buffers.fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rt->effects.mip_maps[0].sizes[0].fbo);
+			glBlitFramebuffer(0, 0, rt->width, rt->height, 0, 0, rt->width, rt->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		}
+		pre_post_resolved = _run_gl43_scene_hooks(GL43EffectHelpers::HOOK_PRE_POST_PROCESS, p_cam_projection, rt->effects.mip_maps[0].color);
+	}
+
 	if (env && (env->dof_blur_far_enabled || env->dof_blur_near_enabled) && storage->frame.current_rt && storage->frame.current_rt->buffers.active) {
 		_prepare_depth_texture();
 	}
-	_post_process(env, p_cam_projection);
+	_post_process(env, p_cam_projection, pre_post_resolved);
 
 	// Force the depth texture to be updated
 	state.prepared_depth_texture = false;
@@ -5752,6 +6145,7 @@ void RasterizerSceneGLES3::initialize() {
 	if (storage->config.async_compilation_enabled) {
 		state.scene_shader.init_async_compilation();
 	}
+
 }
 
 
@@ -5785,7 +6179,7 @@ void RasterizerSceneGLES3::_init_projector_array() {
 			break;
 	}
 
-	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, projector_base_size, projector_base_size, max_projector_lights, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA16F, projector_base_size, projector_base_size, max_projector_lights, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
 	if (projector_filter_mode >= 2) {
 		glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
 	}
@@ -5887,8 +6281,8 @@ void RasterizerSceneGLES3::_update_projector_layer(int p_slot, RasterizerStorage
 	if (copy->is_compressed()) {
 		copy->decompress();
 	}
-	if (copy->get_format() != Image::FORMAT_RGBA8) {
-		copy->convert(Image::FORMAT_RGBA8);
+	if (copy->get_format() != Image::FORMAT_RGBAH) {
+		copy->convert(Image::FORMAT_RGBAH);
 	}
 	if (copy->get_width() != projector_base_size || copy->get_height() != projector_base_size) {
 		Image::Interpolation interp = Image::Interpolation(CLAMP(projector_resize_filter, 0, 4));
@@ -5899,7 +6293,7 @@ void RasterizerSceneGLES3::_update_projector_layer(int p_slot, RasterizerStorage
 	PoolVector<uint8_t>::Read r = copy->get_data().read();
 	WRAPPED_GL_ACTIVE_TEXTURE(GL_TEXTURE0 + storage->config.max_texture_image_units - 11);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, projector_array);
-	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, p_slot, projector_base_size, projector_base_size, 1, GL_RGBA, GL_UNSIGNED_BYTE, r.ptr());
+	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, p_slot, projector_base_size, projector_base_size, 1, GL_RGBA, GL_HALF_FLOAT, r.ptr());
 	if (projector_filter_mode >= 2) {
 		glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
 	}
@@ -6055,7 +6449,52 @@ void RasterizerSceneGLES3::_free_projector_array() {
 	}
 }
 
+bool RasterizerSceneGLES3::_run_gl43_scene_hooks(int p_stage, const CameraMatrix &p_cam_projection, GLuint p_color_tex_id) {
+	RasterizerStorageGLES3::RenderTarget *rt = storage->frame.current_rt;
+	if (!rt || p_color_tex_id == 0) {
+		return false;
+	}
+	GL43EffectHelpers::SceneHookStage stage = (GL43EffectHelpers::SceneHookStage)p_stage;
+	if (!GL43EffectHelpers::has_scene_hooks(stage)) {
+		return false;
+	}
+
+	if (!state.prepared_depth_texture && rt->buffers.active) {
+		_prepare_depth_texture();
+	}
+
+	GLuint depth_id = (rt->external.fbo != 0 && rt->external.depth != 0) ? rt->external.depth : rt->depth;
+	if (depth_id == 0) {
+		return false;
+	}
+
+	GL43EffectHelpers::SceneHookContext ctx;
+	ctx.color_tex_rid = rt->texture;
+	ctx.color_tex_id = (uint32_t)p_color_tex_id;
+	ctx.depth_tex_id = (uint32_t)depth_id;
+	ctx.width = rt->width;
+	ctx.height = rt->height;
+	ctx.hdr = rt->flags[RasterizerStorage::RENDER_TARGET_HDR];
+	ctx.keep_3d_linear = rt->flags[RasterizerStorage::RENDER_TARGET_KEEP_3D_LINEAR];
+	CameraMatrix inv_proj = p_cam_projection.inverse();
+	for (int c = 0; c < 4; c++) {
+		for (int r = 0; r < 4; r++) {
+			ctx.inv_proj_mat[c * 4 + r] = (float)inv_proj.matrix[c][r];
+		}
+	}
+
+	if (!GL43EffectHelpers::invoke_scene_hooks(stage, ctx)) {
+		return false;
+	}
+
+	GLuint restore_fbo = rt->buffers.active ? rt->buffers.fbo : rt->effects.mip_maps[0].sizes[0].fbo;
+	glBindFramebuffer(GL_FRAMEBUFFER, restore_fbo);
+	glViewport(0, 0, rt->width, rt->height);
+	return true;
+}
+
 void RasterizerSceneGLES3::finalize() {
+	GL43EffectHelpers::shutdown_scene_hooks();
 	_free_projector_array();
 	if (projector_slots) {
 		memdelete_arr(projector_slots);

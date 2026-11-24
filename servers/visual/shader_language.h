@@ -86,6 +86,7 @@ public:
 		TK_TYPE_USAMPLER3D,
 		TK_TYPE_SAMPLERCUBE,
 		TK_TYPE_SAMPLEREXT,
+		TK_TYPE_SAMPLER2DSHADOW,
 		TK_INTERPOLATION_FLAT,
 		TK_INTERPOLATION_SMOOTH,
 		TK_CONST,
@@ -211,6 +212,7 @@ public:
 		TYPE_USAMPLER3D,
 		TYPE_SAMPLERCUBE,
 		TYPE_SAMPLEREXT,
+        TYPE_SAMPLER2DSHADOW,
 		TYPE_STRUCT,
 		TYPE_MAX,
 	};
@@ -616,44 +618,6 @@ public:
 			bool callable;
 		};
 
-
-		struct Struct {
-			StringName name;
-			StructNode *shader_struct = nullptr;
-
-			struct Member {
-				StringName name;
-				DataType type = TYPE_VOID;
-				StringName struct_name;
-				int array_size = 0;
-			};
-			Vector<Member> members;
-		};
-
-		struct Varying {
-			enum Stage {
-				STAGE_UNKNOWN,
-				STAGE_VERTEX, // transition stage to STAGE_VERTEX_TO_FRAGMENT_LIGHT, emits warning if it's not used
-				STAGE_FRAGMENT, // transition stage to STAGE_FRAGMENT_TO_LIGHT, emits warning if it's not used
-				STAGE_VERTEX_TO_FRAGMENT_LIGHT,
-				STAGE_FRAGMENT_TO_LIGHT,
-			};
-
-			Stage stage;
-			DataType type;
-			DataInterpolation interpolation;
-			DataPrecision precision;
-			int array_size;
-			TkPos tkpos;
-
-			Varying() :
-					stage(STAGE_UNKNOWN),
-					type(TYPE_VOID),
-					interpolation(INTERPOLATION_FLAT),
-					precision(PRECISION_DEFAULT),
-					array_size(0) {}
-		};
-
 		struct Uniform {
 			enum Hint {
 				HINT_NONE,
@@ -691,6 +655,45 @@ public:
 				hint_range[1] = 1.0f;
 				hint_range[2] = 0.001f;
 			}
+		};
+
+		struct Struct {
+			StringName name;
+			StructNode *shader_struct = nullptr;
+
+			struct Member {
+				StringName name;
+				DataType type = TYPE_VOID;
+				StringName struct_name;
+				int array_size = 0;
+				Uniform::Hint hint = Uniform::HINT_NONE;
+				Vector<ConstantNode::Value> default_value;
+			};
+			Vector<Member> members;
+		};
+
+		struct Varying {
+			enum Stage {
+				STAGE_UNKNOWN,
+				STAGE_VERTEX, // transition stage to STAGE_VERTEX_TO_FRAGMENT_LIGHT, emits warning if it's not used
+				STAGE_FRAGMENT, // transition stage to STAGE_FRAGMENT_TO_LIGHT, emits warning if it's not used
+				STAGE_VERTEX_TO_FRAGMENT_LIGHT,
+				STAGE_FRAGMENT_TO_LIGHT,
+			};
+
+			Stage stage;
+			DataType type;
+			DataInterpolation interpolation;
+			DataPrecision precision;
+			int array_size;
+			TkPos tkpos;
+
+			Varying() :
+					stage(STAGE_UNKNOWN),
+					type(TYPE_VOID),
+					interpolation(INTERPOLATION_FLAT),
+					precision(PRECISION_DEFAULT),
+					array_size(0) {}
 		};
 
 		Map<StringName, Constant> constants;

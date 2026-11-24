@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="RTAO" inherits="Spatial" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Real-time GPU BVH ray-traced ambient occlusion node using OpenGL 4.3 compute shaders and a 3D AO texture volume.
+	</brief_description>
+	<description>
+		Computes physically-based ray-traced ambient occlusion against scene [MeshInstance], [MultiMeshInstance], and animated skinned [Skeleton] meshes using a two-level GPU BVH (TLAS/BLAS), a real-time camera-centered 3D [Texture3D] macro-occlusion volume, [BakedRTAO] 3D textures, and [LocalRTAO] volumes.
+		Automatically composites depth-aware bilaterally upsampled occlusion onto the active viewport before volumetric fog and 2D UI, or exposes the 2D and 3D textures via [method get_ao_texture] and [method get_ao_volume_texture].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="apply_quality_preset">
+			<return type="void" />
+			<argument index="0" name="preset" type="int" enum="RTAO.QualityPreset" />
+			<description>
+				Applies a scalability preset ([constant PRESET_LOW], [constant PRESET_MEDIUM], [constant PRESET_HIGH], or [constant PRESET_ULTRA]) across resolution, ray samples, 3D volume density, and denoising settings.
+			</description>
+		</method>
+		<method name="get_ao_texture" qualifiers="const">
+			<return type="Texture" />
+			<description>
+				Returns the RGBA16F screen-space ambient occlusion [Texture] (RGB = tinted AO multiplier, A = linear camera distance, negative for sky).
+			</description>
+		</method>
+		<method name="get_ao_volume_texture" qualifiers="const">
+			<return type="Texture3D" />
+			<description>
+				Returns the real-time RGBA16F 3D [Texture3D] macro-occlusion volume updated on the GPU (RGB = world-space bent normal, A = scalar AO).
+			</description>
+		</method>
+		<method name="mark_geometry_dirty">
+			<return type="void" />
+			<description>
+				Marks acceleration structures dirty so BLAS/TLAS buffers are refreshed.
+			</description>
+		</method>
+		<method name="reset_history">
+			<return type="void" />
+			<description>
+				Clears temporal accumulation history. Call after camera cuts or teleports.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="alpha_scissor_support" type="bool" setter="set_alpha_scissor_support" getter="get_alpha_scissor_support" default="true">
+			Respects [SpatialMaterial] alpha-scissor cutouts in both the G-buffer pass and BVH ray traversal.
+		</member>
+		<member name="ao_color" type="Color" setter="set_ao_color" getter="get_ao_color" default="Color( 0, 0, 0, 1 )">
+			Tint color applied to fully occluded surfaces.
+		</member>
+		<member name="ao_cull_mask" type="int" setter="set_ao_cull_mask" getter="get_ao_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes act as AO occluders in the BVH.
+		</member>
+		<member name="auto_composite" type="bool" setter="set_auto_composite" getter="get_auto_composite" default="true">
+			Automatically composites AO onto the active viewport before fog and 2D UI.
+		</member>
+		<member name="bilateral_upsample" type="bool" setter="set_bilateral_upsample" getter="get_bilateral_upsample" default="true">
+			Uses depth-aware bilateral filtering when upsampling lower-resolution AO onto full-resolution geometry edges.
+		</member>
+		<member name="blas_builds_per_frame" type="int" setter="set_blas_builds_per_frame" getter="get_blas_builds_per_frame" default="0">
+			Maximum number of new mesh BLAS structures built per frame ([code]0[/code] = unlimited).
+		</member>
+		<member name="checkerboard_tracing" type="bool" setter="set_checkerboard_tracing" getter="get_checkerboard_tracing" default="false">
+			Traces half the pixels per frame in an alternating checkerboard pattern and reconstructs missing pixels from neighbors.
+		</member>
+		<member name="debug_mode" type="int" setter="set_debug_mode" getter="get_debug_mode" enum="RTAO.DebugMode" default="0">
+			Visualizes internal AO, 3D volume AO, or bent normals for debugging.
+		</member>
+		<member name="direct_light_preservation" type="float" setter="set_direct_light_preservation" getter="get_direct_light_preservation" default="0.5">
+			Reduces AO darkening on high-luminance sunlit or emissive pixels during screen-space compositing.
+		</member>
+		<member name="editor_preview" type="bool" setter="set_editor_preview" getter="get_editor_preview" default="true">
+			Enables real-time RTAO rendering inside the 3D editor viewport.
+		</member>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true">
+			Master toggle for G-buffer capture, 3D volume update, ray tracing, and compositing.
+		</member>
+		<member name="falloff_power" type="float" setter="set_falloff_power" getter="get_falloff_power" default="1.0">
+			Distance attenuation exponent for ray-traced occluder hits within [member ray_radius].
+		</member>
+		<member name="frustum_cull_gbuffer" type="bool" setter="set_frustum_cull_gbuffer" getter="get_frustum_cull_gbuffer" default="true">
+			Skips off-screen meshes in the G-buffer pass while keeping them in the ray-traced TLAS.
+		</member>
+		<member name="intensity" type="float" setter="set_intensity" getter="get_intensity" default="1.0">
+			Strength multiplier for ray-traced ambient occlusion.
+		</member>
+		<member name="max_texture_layers" type="int" setter="set_max_texture_layers" getter="get_max_texture_layers" default="64">
+			Maximum unique alpha-scissor textures packed into the GPU texture array.
+		</member>
+		<member name="max_tlas_instances" type="int" setter="set_max_tlas_instances" getter="get_max_tlas_instances" default="0">
+			Caps the number of nearest instances inserted into the TLAS per frame ([code]0[/code] = unlimited).
+		</member>
+		<member name="mesh_cull_distance" type="float" setter="set_mesh_cull_distance" getter="get_mesh_cull_distance" default="45.0">
+			Distance beyond which small meshes below [member mesh_cull_min_angle] are omitted.
+		</member>
+		<member name="mesh_cull_min_angle" type="float" setter="set_mesh_cull_min_angle" getter="get_mesh_cull_min_angle" default="0.012">
+			Minimum bounding-sphere angular radius (in radians) required for distant meshes.
+		</member>
+		<member name="power" type="float" setter="set_power" getter="get_power" default="1.0">
+			Contrast exponent applied to the computed ambient occlusion factor.
+		</member>
+		<member name="ray_origin_bias" type="float" setter="set_ray_origin_bias" getter="get_ray_origin_bias" default="0.004">
+			Surface normal offset applied to ray origins to eliminate self-intersection acne.
+		</member>
+		<member name="ray_radius" type="float" setter="set_ray_radius" getter="get_ray_radius" default="2.5">
+			Maximum world-space distance (in meters) of screen-space hemisphere AO rays.
+		</member>
+		<member name="receiver_cull_mask" type="int" setter="set_receiver_cull_mask" getter="get_receiver_cull_mask" default="4294967295">
+			Visual layer mask controlling which meshes receive ray-traced AO.
+		</member>
+		<member name="resolution_scale" type="float" setter="set_resolution_scale" getter="get_resolution_scale" default="0.5">
+			Resolution scale of the internal AO and G-buffer textures relative to the active viewport.
+		</member>
+		<member name="respect_material_cull_mode" type="bool" setter="set_respect_material_cull_mode" getter="get_respect_material_cull_mode" default="true">
+			Honors each [SpatialMaterial]'s cull mode during G-buffer rendering and BVH traversal.
+		</member>
+		<member name="samples_per_pixel" type="int" setter="set_samples_per_pixel" getter="get_samples_per_pixel" default="2">
+			Number of cosine-weighted hemisphere rays traced per pixel.
+		</member>
+		<member name="skinned_meshes" type="bool" setter="set_skinned_meshes" getter="get_skinned_meshes" default="true">
+			Includes animated skeletal meshes via CPU skinning and bottom-up BVH refitting.
+		</member>
+		<member name="spatial_denoise_passes" type="int" setter="set_spatial_denoise_passes" getter="get_spatial_denoise_passes" default="1">
+			Number of edge-aware A-Trous bilateral spatial denoising passes.
+		</member>
+		<member name="temporal_accumulation" type="bool" setter="set_temporal_accumulation" getter="get_temporal_accumulation" default="true">
+			Reprojects previous-frame AO using world-space position and neighborhood clamping.
+		</member>
+		<member name="temporal_blend" type="float" setter="set_temporal_blend" getter="get_temporal_blend" default="0.2">
+			Current-frame weight when [member temporal_accumulation] is enabled.
+		</member>
+		<member name="texture_array_resolution" type="int" setter="set_texture_array_resolution" getter="get_texture_array_resolution" enum="RTAO.TextureResolution" default="256">
+			Square resolution of each slice in the alpha-scissor GPU texture array.
+		</member>
+		<member name="update_interval" type="int" setter="set_update_interval" getter="get_update_interval" default="1">
+			Updates RTAO once every N frames.
+		</member>
+		<member name="volume_blend" type="float" setter="set_volume_blend" getter="get_volume_blend" default="0.35">
+			Blend weight of the real-time 3D AO texture macro-occlusion into the screen-space AO result.
+		</member>
+		<member name="volume_enabled" type="bool" setter="set_volume_enabled" getter="is_volume_enabled" default="true">
+			Enables the GPU-updated camera-centered 3D [Texture3D] macro-occlusion volume.
+		</member>
+		<member name="volume_extents" type="Vector3" setter="set_volume_extents" getter="get_volume_extents" default="Vector3( 24, 12, 24 )">
+			Half-extents (in meters) around the camera covered by the real-time 3D AO texture.
+		</member>
+		<member name="volume_radius" type="float" setter="set_volume_radius" getter="get_volume_radius" default="4.0">
+			Ray distance (in meters) traced per voxel when updating the 3D AO texture.
+		</member>
+		<member name="volume_resolution" type="Vector3" setter="set_volume_resolution" getter="get_volume_resolution" default="Vector3( 32, 16, 32 )">
+			3D voxel dimensions of the real-time [Texture3D] AO volume.
+		</member>
+		<member name="volume_samples" type="int" setter="set_volume_samples" getter="get_volume_samples" default="4">
+			Number of spherical rays traced per voxel in the 3D volume compute pass.
+		</member>
+		<member name="volume_update_interval" type="int" setter="set_volume_update_interval" getter="get_volume_update_interval" default="2">
+			Updates the real-time 3D AO texture once every N traced frames.
+		</member>
+	</members>
+	<constants>
+		<constant name="PRESET_LOW" value="0" enum="QualityPreset">
+		</constant>
+		<constant name="PRESET_MEDIUM" value="1" enum="QualityPreset">
+		</constant>
+		<constant name="PRESET_HIGH" value="2" enum="QualityPreset">
+		</constant>
+		<constant name="PRESET_ULTRA" value="3" enum="QualityPreset">
+		</constant>
+		<constant name="DEBUG_NONE" value="0" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_AO" value="1" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_VOLUME_3D" value="2" enum="DebugMode">
+		</constant>
+		<constant name="DEBUG_BENT_NORMAL" value="3" enum="DebugMode">
+		</constant>
+		<constant name="TEX_RES_128" value="128" enum="TextureResolution">
+		</constant>
+		<constant name="TEX_RES_256" value="256" enum="TextureResolution">
+		</constant>
+		<constant name="TEX_RES_512" value="512" enum="TextureResolution">
+		</constant>
+		<constant name="TEX_RES_1024" value="1024" enum="TextureResolution">
+		</constant>
+	</constants>
+</class>

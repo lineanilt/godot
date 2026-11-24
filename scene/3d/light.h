@@ -139,9 +139,6 @@ public:
 	void set_square_shape(bool p_enable);
 	bool is_square_shape() const;
 
-	void set_projector_preset(int p_preset);
-	int get_projector_preset() const;
-
 	void set_projector_color_2(const Color &p_color);
 	Color get_projector_color_2() const;
 

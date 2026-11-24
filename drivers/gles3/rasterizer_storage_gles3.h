@@ -544,6 +544,32 @@ public:
 		bool uses_vertex_time;
 		bool uses_fragment_time;
 
+		bool is_raw_glsl;
+		GLuint raw_program;
+
+		struct RawUniform {
+			StringName name;
+			GLint location;
+			GLenum gl_type;
+			ShaderLanguage::DataType sl_type;
+			int tex_unit;
+			int array_size;
+		};
+		Vector<RawUniform> raw_uniforms;
+
+		struct RawBuiltins {
+			GLint projection_matrix;
+			GLint inv_projection_matrix;
+			GLint view_matrix;
+			GLint camera_matrix;
+			GLint model_matrix;
+			GLint mvp_matrix;
+			GLint normal_matrix;
+			GLint camera_position;
+			GLint time;
+			GLint viewport_size;
+		} raw_builtins;
+
 		Shader() :
 				dirty_list(this) {
 			shader = nullptr;
@@ -551,6 +577,18 @@ public:
 			valid = false;
 			custom_code_id = 0;
 			version = 1;
+			is_raw_glsl = false;
+			raw_program = 0;
+			raw_builtins.projection_matrix = -1;
+			raw_builtins.inv_projection_matrix = -1;
+			raw_builtins.view_matrix = -1;
+			raw_builtins.camera_matrix = -1;
+			raw_builtins.model_matrix = -1;
+			raw_builtins.mvp_matrix = -1;
+			raw_builtins.normal_matrix = -1;
+			raw_builtins.camera_position = -1;
+			raw_builtins.time = -1;
+			raw_builtins.viewport_size = -1;
 		}
 	};
 

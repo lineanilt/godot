@@ -30,11 +30,6 @@
 				Returns the value of the specified [enum Light.Param] parameter.
 			</description>
 		</method>
-		<method name="get_projector_preset" qualifiers="const">
-			<return type="int" />
-			<description>
-			</description>
-		</method>
 		<method name="set_blob_shadow_param">
 			<return type="void" />
 			<argument index="0" name="parameter" type="int" enum="Light.BlobShadowParam" />
@@ -55,12 +50,6 @@
 			<argument index="1" name="value" type="float" />
 			<description>
 				Sets the value of the specified [enum Light.Param] parameter.
-			</description>
-		</method>
-		<method name="set_projector_preset">
-			<return type="void" />
-			<argument index="0" name="preset" type="int" />
-			<description>
 			</description>
 		</method>
 	</methods>
@@ -118,8 +107,7 @@
 		</member>
 		<member name="projector_color_2" type="Color" setter="set_projector_color_2" getter="get_projector_color_2" default="Color( 0, 0, 0, 1 )">
 		</member>
-		<member name="projector_preset" type="float" setter="set_param" getter="get_param" default="0.0">
-		</member>
+
 		<member name="shadow_bias" type="float" setter="set_param" getter="get_param" default="0.15">
 			Used to adjust shadow appearance. Too small a value results in self-shadowing ("shadow acne"), while too large a value causes shadows to separate from casters ("peter-panning"). Adjust as needed.
 		</member>
@@ -198,8 +186,6 @@
 		<constant name="PARAM_SHADOW_BLUR" value="17" enum="Param">
 		</constant>
 		<constant name="PARAM_SQUARE_SHAPE" value="18" enum="Param">
-		</constant>
-		<constant name="PARAM_PROJECTOR_PRESET" value="19" enum="Param">
 		</constant>
 		<constant name="PARAM_MAX" value="20" enum="Param">
 			Represents the size of the [enum Param] enum.

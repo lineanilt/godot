@@ -178,8 +178,8 @@ ShaderTypes::ShaderTypes() {
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SCREEN_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["DEPTH_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["CUSTOM_TEXTURE"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
-	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SHADOW_ATLAS"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
-	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["DIRECTIONAL_SHADOWMAP"] = constt(ShaderLanguage::TYPE_SAMPLER2D);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["SHADOW_ATLAS"] = constt(ShaderLanguage::TYPE_SAMPLER2DSHADOW);
+	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["DIRECTIONAL_SHADOWMAP"] = constt(ShaderLanguage::TYPE_SAMPLER2DSHADOW);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_TYPE"] = constt(ShaderLanguage::TYPE_INT);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_DIRECTIONAL"] = constt(ShaderLanguage::TYPE_INT);
 	shader_modes[VS::SHADER_SPATIAL].functions["light"].built_ins["LIGHT_OMNI"] = constt(ShaderLanguage::TYPE_INT);

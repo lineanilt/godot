@@ -28,6 +28,27 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include <atomic>
+
+extern std::atomic<int> vs_force_sync_shader_compile;
+
+namespace {
+struct ScopedViewportForceSyncShaderCompile {
+	bool active;
+	explicit ScopedViewportForceSyncShaderCompile(bool p_enable) :
+			active(p_enable) {
+		if (active) {
+			vs_force_sync_shader_compile.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+	~ScopedViewportForceSyncShaderCompile() {
+		if (active) {
+			vs_force_sync_shader_compile.fetch_sub(1, std::memory_order_relaxed);
+		}
+	}
+};
+} // namespace
+
 #include "visual_server_viewport.h"
 
 #include "core/project_settings.h"
@@ -316,6 +337,8 @@ void VisualServerViewport::draw_viewports() {
 		}
 
 		VSG::storage->render_target_clear_used(vp->render_target);
+
+		ScopedViewportForceSyncShaderCompile sync_once_shaders(vp->update_mode == VS::VIEWPORT_UPDATE_ONCE);
 
 		if (vp->use_arvr && arvr_interface.is_valid()) {
 			VSG::storage->render_target_set_size(vp->render_target, vp->size.x, vp->size.y);

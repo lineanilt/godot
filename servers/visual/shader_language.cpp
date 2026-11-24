@@ -129,6 +129,7 @@ const char *ShaderLanguage::token_names[TK_MAX] = {
 	"TYPE_USAMPLER3D",
 	"TYPE_SAMPLERCUBE",
 	"TYPE_SAMPLEREXT",
+	"SAMPLER2DSHADOW",
 	"INTERPOLATION_FLAT",
 	"INTERPOLATION_SMOOTH",
 	"CONST",
@@ -270,6 +271,7 @@ const ShaderLanguage::KeyWord ShaderLanguage::keyword_list[] = {
 	{ TK_TYPE_USAMPLER3D, "usampler3D" },
 	{ TK_TYPE_SAMPLERCUBE, "samplerCube" },
 	{ TK_TYPE_SAMPLEREXT, "samplerExternalOES" },
+	{ TK_TYPE_SAMPLER2DSHADOW, "sampler2DShadow" },
 	{ TK_INTERPOLATION_FLAT, "flat" },
 	{ TK_INTERPOLATION_SMOOTH, "smooth" },
 	{ TK_CONST, "const" },
@@ -812,7 +814,9 @@ bool ShaderLanguage::is_token_datatype(TokenType p_type) {
 			p_type == TK_TYPE_ISAMPLER3D ||
 			p_type == TK_TYPE_USAMPLER3D ||
 			p_type == TK_TYPE_SAMPLERCUBE ||
-			p_type == TK_TYPE_SAMPLEREXT);
+			p_type == TK_TYPE_SAMPLEREXT ||
+			p_type == TK_TYPE_SAMPLER2DSHADOW
+			);
 }
 
 ShaderLanguage::DataType ShaderLanguage::get_token_datatype(TokenType p_type) {
@@ -928,6 +932,8 @@ String ShaderLanguage::get_datatype_name(DataType p_type) {
 			return "samplerCube";
 		case TYPE_SAMPLEREXT:
 			return "samplerExternalOES";
+		case TYPE_SAMPLER2DSHADOW:
+		    return "sampler2DShadow";
 		case TYPE_STRUCT:
 			return "struct";
 		default: {
@@ -2231,7 +2237,12 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 
 	{ "texture_shadow", TYPE_FLOAT, { TYPE_SAMPLER2D, TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
 	{ "texture_shadow", TYPE_FLOAT, { TYPE_SAMPLER2D, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
+	{ "textureGather_shadow", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
+	{ "textureGather_shadow", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
 
+    { "texture", TYPE_FLOAT, { TYPE_SAMPLER2DSHADOW, TYPE_VEC3, TYPE_VOID }, TAG_GLOBAL, true },
+    { "textureProj", TYPE_FLOAT, { TYPE_SAMPLER2DSHADOW, TYPE_VEC4, TYPE_VOID }, TAG_GLOBAL, true },
+    { "textureGather", TYPE_VEC4, { TYPE_SAMPLER2DSHADOW, TYPE_VEC2, TYPE_FLOAT, TYPE_VOID }, TAG_GLOBAL, true },
 
 	//sub-functions
 
@@ -2660,7 +2671,8 @@ bool ShaderLanguage::is_sampler_type(DataType p_type) {
 			p_type == TYPE_ISAMPLER3D ||
 			p_type == TYPE_USAMPLER3D ||
 			p_type == TYPE_SAMPLERCUBE ||
-			p_type == TYPE_SAMPLEREXT;
+			p_type == TYPE_SAMPLEREXT ||
+			p_type == TYPE_SAMPLER2DSHADOW;
 }
 
 Variant ShaderLanguage::constant_value_to_variant(const Vector<ShaderLanguage::ConstantNode::Value> &p_value, DataType p_type, ShaderLanguage::ShaderNode::Uniform::Hint p_hint) {
@@ -2857,6 +2869,7 @@ ShaderLanguage::DataType ShaderLanguage::get_scalar_type(DataType p_type) {
 		TYPE_UINT,
 		TYPE_FLOAT,
 		TYPE_FLOAT,
+		TYPE_FLOAT,
 		TYPE_VOID,
 	};
 
@@ -2887,6 +2900,7 @@ int ShaderLanguage::get_cardinality(DataType p_type) {
 		4,
 		9,
 		16,
+		1,
 		1,
 		1,
 		1,
@@ -5966,8 +5980,83 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 								tk = _get_token();
 							}
 
+
 							if (!fixed_array_size) {
 								array_size = 0;
+							}
+
+							ShaderNode::Struct::Member sm;
+							sm.name = member->name;
+							sm.type = member->datatype;
+							sm.struct_name = member->struct_name;
+							sm.array_size = member->array_size;
+
+							if (tk.type == TK_COLON) {
+								tk = _get_token();
+								if (tk.type == TK_HINT_COLOR) {
+									if (member->datatype != TYPE_VEC4) {
+										_set_error("Color hint only allowed for vec4.");
+										return ERR_PARSE_ERROR;
+									}
+									sm.hint = ShaderNode::Uniform::HINT_COLOR;
+									tk = _get_token();
+								} else {
+									_set_error("Expected 'hint_color' hint.");
+									return ERR_PARSE_ERROR;
+								}
+							}
+
+							if (tk.type == TK_OP_ASSIGN) {
+								if (sm.array_size > 0) {
+									tk = _get_token();
+									if (tk.type != TK_CURLY_BRACKET_OPEN) {
+										_set_error("Expected '{' for member array default values.");
+										return ERR_PARSE_ERROR;
+									}
+									for (int a = 0; a < sm.array_size; a++) {
+										Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+										if (!expr || expr->type != Node::TYPE_CONSTANT) {
+											_set_error("Expected constant expression after '='");
+											return ERR_PARSE_ERROR;
+										}
+										ConstantNode *cn = static_cast<ConstantNode *>(expr);
+										Vector<ConstantNode::Value> elem_vals;
+										elem_vals.resize(cn->values.size());
+										if (!convert_constant(cn, sm.type, elem_vals.ptrw())) {
+											_set_error("Can't convert constant to " + get_datatype_name(sm.type));
+											return ERR_PARSE_ERROR;
+										}
+										for (int v = 0; v < elem_vals.size(); v++) {
+											sm.default_value.push_back(elem_vals[v]);
+										}
+										if (a < sm.array_size - 1) {
+											tk = _get_token();
+											if (tk.type != TK_COMMA) {
+												_set_error("Expected ',' between array elements.");
+												return ERR_PARSE_ERROR;
+											}
+										}
+									}
+									tk = _get_token();
+									if (tk.type != TK_CURLY_BRACKET_CLOSE) {
+										_set_error("Expected '}' after member array default values.");
+										return ERR_PARSE_ERROR;
+									}
+									tk = _get_token();
+								} else {
+									Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+									if (!expr || expr->type != Node::TYPE_CONSTANT) {
+										_set_error("Expected constant expression after '='");
+										return ERR_PARSE_ERROR;
+									}
+									ConstantNode *cn = static_cast<ConstantNode *>(expr);
+									sm.default_value.resize(cn->values.size());
+									if (!convert_constant(cn, sm.type, sm.default_value.ptrw())) {
+										_set_error("Can't convert constant to " + get_datatype_name(sm.type));
+										return ERR_PARSE_ERROR;
+									}
+									tk = _get_token();
+								}
 							}
 
 							if (tk.type != TK_SEMICOLON && tk.type != TK_COMMA) {
@@ -5976,12 +6065,6 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 							}
 
 							st_node->members.push_back(member);
-
-							ShaderNode::Struct::Member sm;
-							sm.name = member->name;
-							sm.type = member->datatype;
-							sm.struct_name = member->struct_name;
-							sm.array_size = member->array_size;
 							st.members.push_back(sm);
 
 							member_count++;
@@ -6346,7 +6429,130 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 
 
 					if (tk.type == TK_OP_ASSIGN) {
-						if (uniform2.array_size > 0) {
+						if (uniform2.type == TYPE_STRUCT && shader->structs.has(uniform2.struct_name)) {
+							const ShaderNode::Struct &st = shader->structs[uniform2.struct_name];
+							auto parse_struct_value = [&](ShaderNode::Uniform &u) -> Error {
+								tk = _get_token();
+								TokenType close_token = TK_CURLY_BRACKET_CLOSE;
+								if (tk.type == TK_IDENTIFIER && tk.text == u.struct_name) {
+									tk = _get_token();
+									if (tk.type != TK_PARENTHESIS_OPEN) {
+										_set_error("Expected '(' after struct constructor.");
+										return ERR_PARSE_ERROR;
+									}
+									close_token = TK_PARENTHESIS_CLOSE;
+								} else if (tk.type == TK_CURLY_BRACKET_OPEN) {
+									close_token = TK_CURLY_BRACKET_CLOSE;
+								} else {
+									_set_error("Expected '{' or '" + String(u.struct_name) + "(' for struct default value.");
+									return ERR_PARSE_ERROR;
+								}
+
+								for (int m = 0; m < st.members.size(); m++) {
+									const ShaderNode::Struct::Member &sm = st.members[m];
+									if (sm.array_size > 0) {
+										tk = _get_token();
+										if (tk.type != TK_CURLY_BRACKET_OPEN) {
+											_set_error("Expected '{' for struct member array default.");
+											return ERR_PARSE_ERROR;
+										}
+										for (int a = 0; a < sm.array_size; a++) {
+											Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+											if (!expr || expr->type != Node::TYPE_CONSTANT) {
+												_set_error("Expected constant expression for struct member.");
+												return ERR_PARSE_ERROR;
+											}
+											ConstantNode *cn = static_cast<ConstantNode *>(expr);
+											Vector<ConstantNode::Value> elem_vals;
+											elem_vals.resize(cn->values.size());
+											if (!convert_constant(cn, sm.type, elem_vals.ptrw())) {
+												_set_error("Can't convert constant to " + get_datatype_name(sm.type));
+												return ERR_PARSE_ERROR;
+											}
+											for (int v = 0; v < elem_vals.size(); v++) {
+												u.default_value.push_back(elem_vals[v]);
+											}
+											if (a < sm.array_size - 1) {
+												tk = _get_token();
+												if (tk.type != TK_COMMA) {
+													_set_error("Expected ',' between array elements.");
+													return ERR_PARSE_ERROR;
+												}
+											}
+										}
+										tk = _get_token();
+										if (tk.type != TK_CURLY_BRACKET_CLOSE) {
+											_set_error("Expected '}' after struct member array.");
+											return ERR_PARSE_ERROR;
+										}
+									} else {
+										Node *expr = _parse_and_reduce_expression(nullptr, Map<StringName, BuiltInInfo>());
+										if (!expr || expr->type != Node::TYPE_CONSTANT) {
+											_set_error("Expected constant expression for struct member.");
+											return ERR_PARSE_ERROR;
+										}
+										ConstantNode *cn = static_cast<ConstantNode *>(expr);
+										Vector<ConstantNode::Value> elem_vals;
+										elem_vals.resize(cn->values.size());
+										if (!convert_constant(cn, sm.type, elem_vals.ptrw())) {
+											_set_error("Can't convert constant to " + get_datatype_name(sm.type));
+											return ERR_PARSE_ERROR;
+										}
+										for (int v = 0; v < elem_vals.size(); v++) {
+											u.default_value.push_back(elem_vals[v]);
+										}
+									}
+
+									if (m < st.members.size() - 1) {
+										tk = _get_token();
+										if (tk.type != TK_COMMA) {
+											_set_error("Expected ',' between struct members.");
+											return ERR_PARSE_ERROR;
+										}
+									}
+								}
+
+								tk = _get_token();
+								if (tk.type != close_token) {
+									_set_error(close_token == TK_PARENTHESIS_CLOSE ? "Expected ')' after struct constructor." : "Expected '}' after struct default values.");
+									return ERR_PARSE_ERROR;
+								}
+								return OK;
+							};
+
+							if (uniform2.array_size > 0) {
+								tk = _get_token();
+								if (tk.type != TK_CURLY_BRACKET_OPEN) {
+									_set_error("Expected '{' for uniform struct array default values.");
+									return ERR_PARSE_ERROR;
+								}
+								for (int i = 0; i < uniform2.array_size; i++) {
+									Error err = parse_struct_value(uniform2);
+									if (err != OK) {
+										return err;
+									}
+									if (i < uniform2.array_size - 1) {
+										tk = _get_token();
+										if (tk.type != TK_COMMA) {
+											_set_error("Expected ',' between struct array elements.");
+											return ERR_PARSE_ERROR;
+										}
+									}
+								}
+								tk = _get_token();
+								if (tk.type != TK_CURLY_BRACKET_CLOSE) {
+									_set_error("Expected '}' after uniform struct array default values.");
+									return ERR_PARSE_ERROR;
+								}
+								tk = _get_token();
+							} else {
+								Error err = parse_struct_value(uniform2);
+								if (err != OK) {
+									return err;
+								}
+								tk = _get_token();
+							}
+						} else if (uniform2.array_size > 0) {
 							tk = _get_token();
 							if (tk.type != TK_CURLY_BRACKET_OPEN) {
 								_set_error("Expected '{' for uniform array default values.");
@@ -6410,6 +6616,42 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 								return ERR_PARSE_ERROR;
 							}
 							tk = _get_token();
+						}
+					}
+
+					if (uniform2.type == TYPE_STRUCT && uniform2.default_value.empty() && shader->structs.has(uniform2.struct_name)) {
+						const ShaderNode::Struct &st = shader->structs[uniform2.struct_name];
+						bool has_any_default = false;
+						for (int i = 0; i < st.members.size(); i++) {
+							if (st.members[i].default_value.size() > 0) {
+								has_any_default = true;
+								break;
+							}
+						}
+						if (has_any_default) {
+							int count = uniform2.array_size > 0 ? uniform2.array_size : 1;
+							for (int c = 0; c < count; c++) {
+								for (int i = 0; i < st.members.size(); i++) {
+									const ShaderNode::Struct::Member &sm = st.members[i];
+									int card = get_cardinality(sm.type);
+									int elem_count = sm.array_size > 0 ? sm.array_size : 1;
+									int total_vals = card * elem_count;
+									if (sm.default_value.size() == total_vals) {
+										for (int v = 0; v < total_vals; v++) {
+											uniform2.default_value.push_back(sm.default_value[v]);
+										}
+									} else {
+										ConstantNode::Value zero_val;
+										zero_val.boolean = false;
+										zero_val.sint = 0;
+										zero_val.uint = 0;
+										zero_val.real = 0.0f;
+										for (int v = 0; v < total_vals; v++) {
+											uniform2.default_value.push_back(zero_val);
+										}
+									}
+								}
+							}
 						}
 					}
 

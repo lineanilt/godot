@@ -112,6 +112,8 @@ static int _get_datatype_size(SL::DataType p_type) {
 			return 16;
 		case SL::TYPE_SAMPLEREXT:
 			return 16;
+		case SL::TYPE_SAMPLER2DSHADOW:
+			return 16;
 		case SL::TYPE_STRUCT:
 			return 0;
 		default: {
@@ -184,6 +186,8 @@ static int _get_datatype_alignment(SL::DataType p_type) {
 		case SL::TYPE_SAMPLERCUBE:
 			return 16;
 		case SL::TYPE_SAMPLEREXT:
+			return 16;
+		case SL::TYPE_SAMPLER2DSHADOW:
 			return 16;
 		case SL::TYPE_STRUCT:
 			return 0;
@@ -529,34 +533,44 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 										const SL::StructNode *st = p_structs[p_name].shader_struct;
 										for (int j = 0; j < st->members.size(); j++) {
 											int a = get_align(st->members[j]->datatype, st->members[j]->struct_name, p_structs);
-											if (st->members[j]->array_size > 0) a = 16;
+											if (st->members[j]->array_size > 0)
+												a = 16;
 											max_align = MAX(max_align, a);
 										}
 									}
 									return max_align;
 								}
 								switch (p_type) {
-									case SL::TYPE_VOID: return 0;
+									case SL::TYPE_VOID:
+										return 0;
 									case SL::TYPE_BOOL:
 									case SL::TYPE_INT:
 									case SL::TYPE_UINT:
-									case SL::TYPE_FLOAT: return 4;
+									case SL::TYPE_FLOAT:
+										return 4;
 									case SL::TYPE_BVEC2:
 									case SL::TYPE_IVEC2:
 									case SL::TYPE_UVEC2:
-									case SL::TYPE_VEC2: return 8;
+									case SL::TYPE_VEC2:
+										return 8;
 									case SL::TYPE_BVEC3:
 									case SL::TYPE_IVEC3:
 									case SL::TYPE_UVEC3:
-									case SL::TYPE_VEC3: return 16;
+									case SL::TYPE_VEC3:
+										return 16;
 									case SL::TYPE_BVEC4:
 									case SL::TYPE_IVEC4:
 									case SL::TYPE_UVEC4:
-									case SL::TYPE_VEC4: return 16;
-									case SL::TYPE_MAT2: return 16;
-									case SL::TYPE_MAT3: return 16;
-									case SL::TYPE_MAT4: return 16;
-									default: return 0;
+									case SL::TYPE_VEC4:
+										return 16;
+									case SL::TYPE_MAT2:
+										return 16;
+									case SL::TYPE_MAT3:
+										return 16;
+									case SL::TYPE_MAT4:
+										return 16;
+									default:
+										return 0;
 								}
 							}
 
@@ -581,27 +595,36 @@ String ShaderCompilerGLES3::_dump_node_code(const SL::Node *p_node, int p_level,
 									return size;
 								}
 								switch (p_type) {
-									case SL::TYPE_VOID: return 0;
+									case SL::TYPE_VOID:
+										return 0;
 									case SL::TYPE_BOOL:
 									case SL::TYPE_INT:
 									case SL::TYPE_UINT:
-									case SL::TYPE_FLOAT: return 4;
+									case SL::TYPE_FLOAT:
+										return 4;
 									case SL::TYPE_BVEC2:
 									case SL::TYPE_IVEC2:
 									case SL::TYPE_UVEC2:
-									case SL::TYPE_VEC2: return 8;
+									case SL::TYPE_VEC2:
+										return 8;
 									case SL::TYPE_BVEC3:
 									case SL::TYPE_IVEC3:
 									case SL::TYPE_UVEC3:
-									case SL::TYPE_VEC3: return 12;
+									case SL::TYPE_VEC3:
+										return 12;
 									case SL::TYPE_BVEC4:
 									case SL::TYPE_IVEC4:
 									case SL::TYPE_UVEC4:
-									case SL::TYPE_VEC4: return 16;
-									case SL::TYPE_MAT2: return 32;
-									case SL::TYPE_MAT3: return 48;
-									case SL::TYPE_MAT4: return 64;
-									default: return 0;
+									case SL::TYPE_VEC4:
+										return 16;
+									case SL::TYPE_MAT2:
+										return 32;
+									case SL::TYPE_MAT3:
+										return 48;
+									case SL::TYPE_MAT4:
+										return 64;
+									default:
+										return 0;
 								}
 							}
 						};
