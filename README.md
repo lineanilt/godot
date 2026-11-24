@@ -14,7 +14,8 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
 	- The Normal texture's alpha has the roughness of materials.
 	- If you're not using it, you can strip the Subsurface Scattering shader of its functions so its G-Buffer texture can be, say, a custom float pass.
 - PCF25. (54355)
-- NPOT shadowmaps (54042 - This doesn't work on shadow atlases.)
+- NPOT shadowmaps. (54042 - This doesn't work on shadow atlases.)
+- BakedLightmap shadowmasks. (68702)
 - Non-uniform light scaling. (self - shadows break when this is enabled though. I think it's the UVs, but I might be wrong.)
 - Hard shadows are actually hard. (self)
 - Square light mode. OmniLight shadows still render in a sphere for some reason. (self)
@@ -29,17 +30,42 @@ This is a **fork of Godot 3.x** that adds a bunch of new features and merges som
   	  	- B: Packed Normals (octahedral, view-space)
   	  	- A: Material ID
 	- `textureGather`. Requires OpenGL 4.0 or ES 3.1.
+	- `DIRECTIONAL_SHADOWMAP`/`SHADOW_ATLAS` (sampler2DShadow - `light()`)
+		- `PSSM_OFFSET`
+		- `SHADOW_COORDS`
+- Shader language: `group_uniforms`, uniform `struct` support, uniform arrays (vec3, vec4, struct).
+- GDScript: `export_group`, `export_category`
+- Parallel shader compilation support (GL4.5).
 - Some contact shadow improvements. (self)
 - Light projectors. (self)
 	- This uses a `sampler2DArray`-based system. It has a 'Base Size' property in the project settings; every Projector texture is automatically resized to it (this doesn't affect the resource itself).
  	- You can set the filters (shader, resize) in the settings.
-  	- Additionally, if you don't want to use textures, there are 20 projector presets per-light that use math instead of textures.
   	- This is also available for DirectionalLights.
 - Depth texture can be accessed in CanvasItems. Make sure you have a proper 3D viewport, though. (self)
+- `shadow_cull_mask` per light. (self)
+- Bunch of RT-based features, using OpenGL 4.3. (self)
+	- RTAO.
+		- BakedRTAO - multithreaded and uses SIMD, namely SSE2 and AVX.
+		- LocalRTAO - set a local RTAO volume's settings like Radius.
+	- RTReflections.
+		- This unfortunately doesn't work well with custom shaders.
+	- RTGI.
+		- This is a bit noisy and jittery on low settings.
+- TAA, uses OpenGL 4.3. (self)
+- MotionBlur, also uses OpenGL 4.3. (self)
+	- This runs per-object!
+- Volumetrics, once again uses OpenGL 4.3. (self)
+	- BakedFogVolume - bakes to a 3D texture.
+	- LocalFogVolume.
+- GLSLShader. (self)
+	- Essentially raw GLSL as a shader.
+- GL43Server. (self)
+	- User-side server for OpenGL 4.3 functions for things like compute shaders and image2D.
+
 
 I probably missed some but still.
 
-It's quite stable and Mono works.
+Prebuilts are Mono.
 
 The main point of this fork is that it's, well, Godot 3 and not Godot 4. 
 People sticking to Godot 3 may have a lot of reasons for it, but for me personally, it's: 
@@ -154,17 +180,23 @@ void fragment() {
 
 ### Flaws
 - GLES2 doesn't have the new features. Well, most of them.
-- This would not work on most mobile drivers.
+- This would not work on mobile drivers or GPUs that don't support OpenGL 4.3.
 - On 16-texunit GPUs, you only have 3 samplers available for `spatial` shaders. I'd recommend texture packing or `sampler2DArray`s. I mean, that's what you should be doing in vanilla Godot 3 anyway, not just because of the limitations, but for performance. **Keep in mind that on most drivers, if you aren't using, say, `SCREEN_TEXTURE`, `DEPTH_TEXTURE`, and so on, you have additional samplers available. Unused textures are often just removed.**
 - Shaders using `textureGather` would fail on older GPU drivers that do not support OpenGL 4 extensions.
 - It's a bit janky since it was mostly made for _me_. I decided to publish it because, well, not a lot of Godot 3 forks.
-- Because of the previous point, some of my additions are AI generated. No, it's not gonna explode your PC, it works well.
+- Because of the previous point, a lot of my additions are AI generated. It is relatively stable, however. The reason I use AI is because I don't code in C++, nor am I basically a mathmetician suited to understand this stuff. I'm mostly a designer, not a low-level programmer.
 - Grabbing the depth, screen or new buffer textures would put your material on the alpha pipeline. This is a vanilla Godot 3 issue.
 
 Unless you're targeting _really_ old hardware that does not support GL3.3 or GL4.x (which is like... GPUs older than 2009), these aren't exactly major issues. 
 Even Ivy Bridge supports GL4.2 (with 4.6 extensions) on Linux (4.0 on Windows).
 
 And as for mobile, well, it compiles, but it wouldn't _compile shaders_ due to MRTs. Mobile also isn't the scope of this engine.
+
+### Minimum requirements
+**CPU:** Ivy Bridge (2012) or newer; preferably quad-core or higher.
+**RAM:** 6GB system RAM, 2GB VRAM.
+**GPU:** Intel HD Graphics 2500 (Mesa) or any GPU with GL4.3 support.
+**glibc:** 2.35 (Linux)
 
 ## Original README
 ---
